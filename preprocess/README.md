@@ -1,4 +1,4 @@
-**README.md: Creating TFRecords from ImageNet Dataset**
+**Creating TFRecords from ImageNet Dataset**
 
 ## Prerequisites
 
