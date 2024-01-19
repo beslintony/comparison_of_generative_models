@@ -34,6 +34,16 @@
     python tf-val.py
     ```
 
+- **Use proper path:**
+  - After executing both the scripts to create TFRecord files for training and validation, create a folder in the root called `imagenet` and store both `train_data.tfrecord` and `val_data.tfrecord` files.
+    ```bash
+    mkdir imagenet
+    mv /path/to/imagenet/ILSVRC/some_where/train_data.tfrecord /imagenet/train_data.tfrecord
+    mv /path/to/imagenet/ILSVRC/some_where/val_data.tfrecord /imagenet/val_data.tfrecord
+    ```
+
+  Replace /path/to/imagenet/ILSVRC/some_where/` with the path to the created tfrecord files.
+
 ## Important Notes
 
 - Ensure you have sufficient disk space as the ImageNet dataset is large.
