@@ -248,6 +248,12 @@ def train_and_evaluate(g_model, d_model, gan_model, dataset, latent_dim, n_epoch
             real_images_array = real_images_for_evaluation[0]
             gen_images_array = generated_images_for_evaluation
             gen_images_array = np.clip(gen_images_array, 0.0, 1.0)
+            
+            print("Real Image Min:", np.min(real_images_array))
+            print("Real Image Max:", np.max(real_images_array))
+            
+            print("Gen Image Min:", np.min(gen_images_array))
+            print("Gen Image Max:", np.max(gen_images_array))
 
             print(f'Calculating metrics...')
             is_avg, is_std = evaluator.calculate_inception_score(gen_images_array[:args.inception_score_samples])
@@ -322,6 +328,25 @@ if __name__ == "__main__":
     # Create a TensorBoard callback
     # # log_dir = os.path.join('logs', f'{args.output_dir}_{args.dataset}_{datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}')
     tensorboard_writer = tf.summary.create_file_writer(save_callback.log_folder)
+    
+    # Log hyperparameters to TensorBoard with a common prefix
+    with tensorboard_writer.as_default():
+        tf.summary.scalar('hyperparameters/latent_dim', args.latent_dim, step=0)
+        tf.summary.scalar('hyperparameters/learning_rate', args.learning_rate, step=0)
+        tf.summary.scalar('hyperparameters/alpha', args.alpha, step=0)
+        tf.summary.scalar('hyperparameters/beta1', args.beta1, step=0)
+        tf.summary.scalar('hyperparameters/dropout_rate', args.dropout_rate, step=0)
+        tf.summary.scalar('hyperparameters/batch_size', args.batch_size, step=0)
+        tf.summary.scalar('hyperparameters/buffer_size', args.buffer_size, step=0)
+        tf.summary.scalar('hyperparameters/examples_to_generate', args.examples_to_generate, step=0)
+        tf.summary.scalar('hyperparameters/save_image_freq', args.save_image_freq, step=0)
+        tf.summary.scalar('hyperparameters/save_model_freq', args.save_model_freq, step=0)
+        tf.summary.scalar('hyperparameters/eval_freq', args.eval_freq, step=0)
+        tf.summary.scalar('hyperparameters/eval_batch_size', args.eval_batch_size, step=0)
+        tf.summary.scalar('hyperparameters/fid_gen_samples', args.fid_gen_samples, step=0)
+        tf.summary.scalar('hyperparameters/fid_real_samples', args.fid_real_samples, step=0)
+        tf.summary.scalar('hyperparameters/inception_score_samples', args.inception_score_samples, step=0)
+        tf.summary.scalar('hyperparameters/wasserstein_distance_samples', args.wasserstein_distance_samples, step=0)
 
     train_and_evaluate(g_model, d_model, gan_model, dataset, latent_dim, n_epochs=args.epochs, n_batch=args.batch_size,
           callback=save_callback)

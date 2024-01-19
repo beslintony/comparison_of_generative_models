@@ -34,14 +34,14 @@ def parse_args():
     parser.add_argument('--dataset', type=str, default='fashion_mnist', choices=['fashion_mnist', 'cifar10', 'svhn' ,'imagenet'], help='Dataset name')
     parser.add_argument('--epochs', type=int, default=1000, help='Number of training epochs')
     parser.add_argument('--buffer_size', type=int, default=50000, help='Buffer size for dataset shuffling')
-    parser.add_argument('--z_dim', type=int, default=100, help='Dimension of the generator input (z)')
+    parser.add_argument('--latent_dim', type=int, default=100, help='Size of the latent space')
     parser.add_argument('--batch_size', type=int, default=512, help='Batch size')
     parser.add_argument('--d_lr', type=float, default=0.0004, help='Discriminator learning rate')
     parser.add_argument('--g_lr', type=float, default=0.0004, help='Generator learning rate')
     parser.add_argument('--examples_to_generate', type=int, default=25, help='Number of examples to generate in each image')
-    parser.add_argument('--save_image_freq', type=int, default=10, help='Frequency of saving generated images')
-    parser.add_argument('--save_model_freq', type=int, default=100, help='Frequency of saving the generator model')
-    parser.add_argument('--eval_freq', type=int, default=100, help='Frequency of printing evaluation metrics')
+    parser.add_argument('--save_image_freq', type=int, default=1, help='Frequency of saving generated images')
+    parser.add_argument('--save_model_freq', type=int, default=10, help='Frequency of saving the generator model')
+    parser.add_argument('--eval_freq', type=int, default=1, help='Frequency of printing evaluation metrics')
     parser.add_argument('--eval_batch_size', type=int, default=64, help='Batch size for evaluation metrics')
     parser.add_argument('--fid_gen_samples', type=int, default=10000, help='Number of generated samples for FID calculation')
     parser.add_argument('--fid_real_samples', type=int, default=10000, help='Number of real samples for FID calculation')
@@ -54,7 +54,7 @@ def parse_args():
 args = parse_args()
 
 # Test noise vector
-test_z = tf.random.normal([36, args.z_dim])
+test_z = tf.random.normal([36, args.latent_dim])
 
 class SaveImagesCallback(k.Callback):
     def __init__(self, model_name, dataset_name, decoder, latent_dim, examples_to_generate=25, save_freq=1, save_model_freq=10):
@@ -118,8 +118,8 @@ class SaveImagesCallback(k.Callback):
         return log_folder
 
 # Function to generate random noise vector
-def get_random_z(z_dim, batch_size):
-    return tf.random.uniform([batch_size, z_dim], minval=-1, maxval=1)
+def get_random_z(latent_dim, batch_size):
+    return tf.random.uniform([batch_size, latent_dim], minval=-1, maxval=1)
 
 # Define discriminator
 def make_discriminator(input_shape):
@@ -165,7 +165,7 @@ def get_loss_fn():
     return d_loss_fn, g_loss_fn
 
 # Generator & Discriminator
-G = make_generator((args.z_dim,))
+G = make_generator((args.latent_dim,))
 D = make_discriminator((32, 32, 3))
 
 # Optimizer
@@ -177,7 +177,7 @@ d_loss_fn, g_loss_fn = get_loss_fn()
 
 @tf.function
 def train_step(real_images):
-    z = get_random_z(args.z_dim, args.batch_size)
+    z = get_random_z(args.latent_dim, args.batch_size)
     with tf.GradientTape() as d_tape, tf.GradientTape() as g_tape:
         fake_images = G(z, training=True)
 
@@ -228,6 +228,14 @@ def train(ds, epochs=10, log_freq=20):
             generated_images_for_evaluation = G.predict(latent_samples)
             
             gen_images_array = generated_images_for_evaluation
+            gen_images_array = np.clip(gen_images_array, 0.0, 1.0)
+            
+            print("Real Image Min:", np.min(real_images_array))
+            print("Real Image Max:", np.max(real_images_array))
+            
+            print("Gen Image Min:", np.min(gen_images_array))
+            print("Gen Image Max:", np.max(gen_images_array))
+
             
             print("shape of real images: ", real_images_array.shape)
             print("shape of generated images: ", gen_images_array.shape)
@@ -267,13 +275,31 @@ if __name__ == "__main__":
         model_name='DCGAN',
         dataset_name=args.dataset,
         decoder=G,
-        latent_dim=args.z_dim,
+        latent_dim=args.latent_dim,
         examples_to_generate=args.examples_to_generate,
         save_freq=args.save_image_freq,
         save_model_freq=args.save_model_freq
     )
     
     tensorboard_writer = tf.summary.create_file_writer(save_images_callback.log_folder)
+    
+    # Log hyperparameters to TensorBoard with a common prefix
+    with tensorboard_writer.as_default():
+        tf.summary.scalar('hyperparameters/latent_dim', args.latent_dim, step=0)
+        tf.summary.scalar('hyperparameters/d_lr', args.d_lr, step=0)
+        tf.summary.scalar('hyperparameters/g_lr', args.g_lr, step=0)
+        tf.summary.scalar('hyperparameters/epochs', args.epochs, step=0)
+        tf.summary.scalar('hyperparameters/batch_size', args.batch_size, step=0)
+        tf.summary.scalar('hyperparameters/buffer_size', args.buffer_size, step=0)
+        tf.summary.scalar('hyperparameters/examples_to_generate', args.examples_to_generate, step=0)
+        tf.summary.scalar('hyperparameters/save_image_freq', args.save_image_freq, step=0)
+        tf.summary.scalar('hyperparameters/save_model_freq', args.save_model_freq, step=0)
+        tf.summary.scalar('hyperparameters/eval_freq', args.eval_freq, step=0)
+        tf.summary.scalar('hyperparameters/eval_batch_size', args.eval_batch_size, step=0)
+        tf.summary.scalar('hyperparameters/fid_gen_samples', args.fid_gen_samples, step=0)
+        tf.summary.scalar('hyperparameters/fid_real_samples', args.fid_real_samples, step=0)
+        tf.summary.scalar('hyperparameters/inception_score_samples', args.inception_score_samples, step=0)
+        tf.summary.scalar('hyperparameters/wasserstein_distance_samples', args.wasserstein_distance_samples, step=0)
 
     # Load dataset
     train_ds, _ = load_dataset(dataset_name=args.dataset, buffer_size=args.buffer_size,

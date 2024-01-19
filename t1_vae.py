@@ -64,6 +64,11 @@ class SaveImagesCallback(Callback):
         self.wasserstein_distance_samples = wasserstein_distance_samples
 
         self.tensorboard_writer = tf.summary.create_file_writer(self.log_folder)
+        
+        # Loss metrics
+        self.reconstruction_metric = tf.metrics.Mean(name='reconstruction_loss')
+        self.kl_metric = tf.metrics.Mean(name='kl_loss')
+        self.total_loss_metric = tf.metrics.Mean(name='total_loss')
 
     def on_epoch_end(self, epoch, logs=None):
         if (epoch + 1) % self.save_freq == 0:
@@ -92,13 +97,12 @@ class SaveImagesCallback(Callback):
             real_images_for_evaluation = next(iter(ds_for_evaluation))
             real_images_array = real_images_for_evaluation.numpy()
 
-            # # print("Real Image Min:", np.min(real_images_array))
-            # # print("Real Image Max:", np.max(real_images_array))
+            print("Real Image Min:", np.min(real_images_array))
+            print("Real Image Max:", np.max(real_images_array))
             
-            # # print("Gen Image Min:", np.min(gen_images_array))
-            # # print("Gen Image Max:", np.max(gen_images_array))
+            print("Gen Image Min:", np.min(gen_images_array))
+            print("Gen Image Max:", np.max(gen_images_array))
 
-            # # # Assuming real_images_array is your real images
             # # real_images_normalized = (real_images_array - np.min(real_images_array)) / (np.max(real_images_array) - np.min(real_images_array))
             
             # # # Visualize real images
@@ -148,6 +152,11 @@ class SaveImagesCallback(Callback):
                 tf.summary.scalar('inception_score_avg', is_avg, step=epoch + 1)
                 tf.summary.scalar('inception_score_std', is_std, step=epoch + 1)
                 tf.summary.scalar('wasserstein_distance', wasserstein_distance, step=epoch + 1)
+            
+        # Reset metrics for the next epoch
+        self.reconstruction_metric.reset_states()
+        self.kl_metric.reset_states()
+        self.total_loss_metric.reset_states()
 
     def save_generated_images(self, generated_images, epoch):
         folder_path = os.path.join(self.log_folder, 'images')
@@ -227,7 +236,12 @@ def make_model(SIZE=(32, 32, 3), LATENT_DIM=10, LR=1e-4, BETA=1.0):
     kl_loss = -0.5 * tf.reduce_sum(1 + z_log_var - tf.square(z_mean) - tf.exp(z_log_var), axis=-1)
     kl_loss = tf.reduce_mean(kl_loss)
 
-    vae_loss = tf.reduce_mean(reconstruction_loss + BETA * kl_loss)
+    vae_loss = tf.reduce_mean(reconstruction_loss + BETA * kl_loss, name='vae_loss')
+    
+    # Update model to include loss metrics
+    vae.add_metric(reconstruction_loss, name='reconstruction_loss')
+    vae.add_metric(kl_loss, name='kl_loss')
+    vae.add_metric(vae_loss, name='total_loss')
 
     vae.add_loss(vae_loss)
     vae.compile(optimizer=k.optimizers.Adam(LR))
@@ -281,12 +295,12 @@ def main(args):
 
     vae.fit(
         train_dataset.map(lambda x: (x, x)),
-        epochs=args.epochs, callbacks=callbacks,
+        epochs=args.epochs,
+        callbacks=callbacks,
         steps_per_epoch=args.buffer_size // args.batch_size,
         validation_data=val_dataset.map(lambda x: (x, x)),
         validation_steps=10000 // args.batch_size
     )
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Train VAE on different datasets')
@@ -299,9 +313,9 @@ if __name__ == "__main__":
     parser.add_argument('--batch_size', type=int, default=512, help='Batch size')
     parser.add_argument('--buffer_size', type=int, default=60000, help='Buffer size for dataset shuffling')
     parser.add_argument('--examples_to_generate', type=int, default=25, help='Number of examples to generate in each image')
-    parser.add_argument('--save_image_freq', type=int, default=100, help='Frequency of saving generated images')
-    parser.add_argument('--save_model_freq', type=int, default=1000, help='Frequency of saving the generator model')
-    parser.add_argument('--eval_freq', type=int, default=200, help='Frequency of printing evaluation metrics')
+    parser.add_argument('--save_image_freq', type=int, default=1, help='Frequency of saving generated images')
+    parser.add_argument('--save_model_freq', type=int, default=10, help='Frequency of saving the generator model')
+    parser.add_argument('--eval_freq', type=int, default=1, help='Frequency of printing evaluation metrics')
     parser.add_argument('--eval_batch_size', type=int, default=64, help='Batch size for evaluation metrics')
     parser.add_argument('--fid_gen_samples', type=int, default=10000, help='Number of generated samples for FID calculation')
     parser.add_argument('--fid_real_samples', type=int, default=10000, help='Number of real samples for FID calculation')

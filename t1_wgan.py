@@ -34,7 +34,7 @@ total_loss_metrics = tf.metrics.Mean(name='total_loss')
 def parse_arguments():
     parser = argparse.ArgumentParser(description='Wasserstein GAN Training Script')
     parser.add_argument('--dataset', type=str, default='fashion_mnist', choices=['fashion_mnist', 'cifar10', 'svhn' ,'imagenet'], help='Dataset name')
-    parser.add_argument('--latent_dim', type=int, default=100, help='Dimensionality of the latent space')
+    parser.add_argument('--latent_dim', type=int, default=100, help='Size of the latent space')
     parser.add_argument('--img_size', type=int, default=32, help='Size of the generated images')
     parser.add_argument('--batch_size', type=int, default=512, help='Batch size for training')
     parser.add_argument('--learning_rate', type=float, default=1e-4, help='Learning rate')
@@ -141,8 +141,8 @@ def make_discriminator(img_shape):
         layers.Dense(1)
     ])
 
-def get_random_z(z_dim, batch_size):
-    return tf.random.uniform([batch_size, z_dim], minval=-1, maxval=1)
+def get_random_z(latent_dim, batch_size):
+    return tf.random.uniform([batch_size, latent_dim], minval=-1, maxval=1)
 
 def generator_loss(fake_output):
     return -tf.reduce_mean(fake_output)
@@ -210,6 +210,13 @@ def train(generator, discriminator, generator_optimizer, discriminator_optimizer
             generated_images_for_evaluation = generator.predict(latent_samples)
             
             gen_images_array = generated_images_for_evaluation
+            gen_images_array = np.clip(gen_images_array, 0.0, 1.0)
+            
+            print("Real Image Min:", np.min(real_images_array))
+            print("Real Image Max:", np.max(real_images_array))
+            
+            print("Gen Image Min:", np.min(gen_images_array))
+            print("Gen Image Max:", np.max(gen_images_array))
             
             print("shape of real images: ", real_images_array.shape)
             print("shape of generated images: ", gen_images_array.shape)
@@ -261,6 +268,24 @@ if __name__ == "__main__":
     )
 
     tensorboard_writer = tf.summary.create_file_writer(save_callback.log_folder)
+    
+    # Log hyperparameters to TensorBoard with a common prefix
+    with tensorboard_writer.as_default():
+        tf.summary.scalar('hyperparameters/latent_dim', args.latent_dim, step=0)
+        tf.summary.scalar('hyperparameters/learning_rate', args.learning_rate, step=0)
+        tf.summary.scalar('hyperparameters/epochs', args.epochs, step=0)
+        tf.summary.scalar('hyperparameters/batch_size', args.batch_size, step=0)
+        tf.summary.scalar('hyperparameters/buffer_size', args.buffer_size, step=0)
+        tf.summary.scalar('hyperparameters/clip_val', args.clip_val, step=0)
+        tf.summary.scalar('hyperparameters/examples_to_generate', args.examples_to_generate, step=0)
+        tf.summary.scalar('hyperparameters/save_image_freq', args.save_image_freq, step=0)
+        tf.summary.scalar('hyperparameters/save_model_freq', args.save_model_freq, step=0)
+        tf.summary.scalar('hyperparameters/eval_freq', args.eval_freq, step=0)
+        tf.summary.scalar('hyperparameters/eval_batch_size', args.eval_batch_size, step=0)
+        tf.summary.scalar('hyperparameters/fid_gen_samples', args.fid_gen_samples, step=0)
+        tf.summary.scalar('hyperparameters/fid_real_samples', args.fid_real_samples, step=0)
+        tf.summary.scalar('hyperparameters/inception_score_samples', args.inception_score_samples, step=0)
+        tf.summary.scalar('hyperparameters/wasserstein_distance_samples', args.wasserstein_distance_samples, step=0)
 
     # Load dataset
     train_ds, _ = load_dataset(dataset_name=args.dataset, buffer_size=args.buffer_size,

@@ -70,6 +70,10 @@ class SaveImagesCallback(k.callbacks.Callback):
         self.wasserstein_distance_samples = wasserstein_distance_samples
 
         self.tensorboard_writer = tf.summary.create_file_writer(self.log_folder)
+        
+        self.reconstruction_metric = tf.metrics.Mean(name='reconstruction_loss')
+        self.kl_metric = tf.metrics.Mean(name='kl_loss')
+        self.total_loss_metric = tf.metrics.Mean(name='total_loss')
 
     def on_epoch_end(self, epoch, logs=None):
         # Generate and save images
@@ -108,6 +112,12 @@ class SaveImagesCallback(k.callbacks.Callback):
             real_images_for_evaluation = next(iter(ds_for_evaluation))
             real_images_array = real_images_for_evaluation.numpy()
             
+            print("Real Image Min:", np.min(real_images_array))
+            print("Real Image Max:", np.max(real_images_array))
+            
+            print("Gen Image Min:", np.min(gen_images_array))
+            print("Gen Image Max:", np.max(gen_images_array))
+            
             # Calculate and print evaluation metrics
             is_avg, is_std = self.evaluator.calculate_inception_score(
                 gen_images_array[:args.inception_score_samples])
@@ -126,6 +136,11 @@ class SaveImagesCallback(k.callbacks.Callback):
                 tf.summary.scalar('inception_score_avg', is_avg, step=epoch + 1)
                 tf.summary.scalar('inception_score_std', is_std, step=epoch + 1)
                 tf.summary.scalar('wasserstein_distance', wasserstein_distance, step=epoch + 1)
+        
+        # Reset metrics for the next epoch
+        self.reconstruction_metric.reset_states()
+        self.kl_metric.reset_states()
+        self.total_loss_metric.reset_states()
 
     def save_generated_images(self, generated_images, epoch):
         # Save generated images
@@ -212,7 +227,7 @@ def make_decoder(output_shape=INPUT_SHAPE, latent_dim=LATENT_DIM, condition_size
     y = layers.Reshape(output_shape)(y)
     return k.Model(inputs=[z, c], outputs=y, name='decoder')
 
-def make_cvae_model(latent_dim, condition_size, learning_rate, input_shape=(32, 32, 3)):
+def make_cvae_model(latent_dim, condition_size, learning_rate, input_shape=(32, 32, 3), alpha=1, beta=1):
     encoder = make_encoder(input_shape, latent_dim, condition_size)
     decoder = make_decoder(input_shape, latent_dim, condition_size)
 
@@ -226,16 +241,18 @@ def make_cvae_model(latent_dim, condition_size, learning_rate, input_shape=(32, 
     mean, log_var = encoder([x, c])
     z = layers.Lambda(sampling, output_shape=(latent_dim,), name='sampling')([mean, log_var])
     y = decoder([z, c])
-
-    def cvae_loss(x, y, mean, log_var, alpha=1.0, beta=1.0):
-        reconstruction_loss = k.losses.mean_squared_error(y_true=x, y_pred=y)
-        reconstruction_loss = tf.reduce_mean(reconstruction_loss, name='recon_loss')
-        kl_loss = - 0.5 * tf.reduce_mean(log_var - tf.square(mean) - tf.exp(log_var) + 1)
-        kl_loss = tf.identity(kl_loss, name="kl_loss")
-        return alpha * reconstruction_loss + beta * kl_loss
-
+    
+    reconstruction_loss = k.losses.mean_squared_error(y_true=x, y_pred=y)
+    kl_loss = -0.5 * tf.reduce_mean(log_var - tf.square(mean) - tf.exp(log_var) + 1)
+    cvae_loss = alpha * reconstruction_loss + beta * kl_loss
+    
     cvae = k.Model(inputs=[x, c], outputs=y, name='cvae')
-    cvae.add_loss(cvae_loss(x, y, mean, log_var))
+
+    cvae.add_metric(reconstruction_loss, name='reconstruction_loss')
+    cvae.add_metric(kl_loss, name='kl_loss')
+    cvae.add_metric(cvae_loss, name='total_loss')
+
+    cvae.add_loss(cvae_loss)
 
     cvae.compile(optimizer=k.optimizers.Adam(learning_rate=learning_rate))
 
@@ -252,7 +269,7 @@ def main(args):
     )
 
     save_images_callback = SaveImagesCallback(
-        model_name='t2-CVAE',
+        model_name='CVAE',
         dataset_name=args.dataset,
         decoder=decoder,
         latent_dim=args.latent_dim,
@@ -297,12 +314,12 @@ if __name__ == "__main__":
     parser.add_argument('--latent_dim', type=int, default=150, help='Latent dimension')
     parser.add_argument('--learning_rate', type=float, default=1e-4, help='Learning rate')
     parser.add_argument('--epochs', type=int, default=50000, help='Number of epochs')
-    parser.add_argument('--batch_size', type=int, default=128, help='Batch size')
+    parser.add_argument('--batch_size', type=int, default=512, help='Batch size')
     parser.add_argument('--buffer_size', type=int, default=60000, help='Buffer size for dataset shuffling')
     parser.add_argument('--examples_to_generate', type=int, default=25, help='Number of examples to generate in each image')
-    parser.add_argument('--save_image_freq', type=int, default=5, help='Frequency of saving generated images')
+    parser.add_argument('--save_image_freq', type=int, default=1, help='Frequency of saving generated images')
     parser.add_argument('--save_model_freq', type=int, default=10, help='Frequency of saving the generator model')
-    parser.add_argument('--eval_freq', type=int, default=0, help='Frequency of printing evaluation metrics')
+    parser.add_argument('--eval_freq', type=int, default=1, help='Frequency of printing evaluation metrics')
     parser.add_argument('--eval_batch_size', type=int, default=64, help='Batch size for evaluation metrics')
     parser.add_argument('--fid_gen_samples', type=int, default=10000, help='Number of generated samples for FID calculation')
     parser.add_argument('--fid_real_samples', type=int, default=10000, help='Number of real samples for FID calculation')
