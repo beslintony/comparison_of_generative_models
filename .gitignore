@@ -1,1 +1,3 @@
-logs
+logs/
+imagenet/
+__pycache__/
