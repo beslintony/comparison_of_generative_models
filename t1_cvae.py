@@ -202,66 +202,90 @@ def load_val_dataset_samples(dataset_name, batch_size=128):
 
     return dataset
 
-def make_encoder(input_shape=INPUT_SHAPE, latent_dim=LATENT_DIM, condition_size=CONDITION_SIZE):
-    # Encoder model
+def make_encoder(input_shape=(32, 32, 3), latent_dim=64, condition_size=10):
     x = layers.Input(shape=input_shape)
     c = layers.Input(shape=(condition_size,))
-    x_flat = layers.Flatten()(x)
-    inputs = layers.concatenate([x_flat, c], axis=1)
-    h = layers.Dense(units=512, activation='relu')(inputs)
+
+    c_reshaped = layers.Dense(units=input_shape[0]*input_shape[1]*input_shape[2])(c)
+    c_reshaped = layers.Reshape((input_shape[0], input_shape[1], input_shape[2]))(c_reshaped)
+
+    h = layers.concatenate([x, c_reshaped])
+
+    h = layers.Conv2D(filters=32, kernel_size=3, strides=(2, 2), padding='SAME', activation='relu')(h)
     h = layers.BatchNormalization()(h)
-    h = layers.Dense(units=256, activation='relu')(h)
+    h = layers.Conv2D(filters=64, kernel_size=3, strides=(2, 2), padding='SAME', activation='relu')(h)
+    h = layers.BatchNormalization()(h)
+    h = layers.Conv2D(filters=128, kernel_size=3, strides=(2, 2), padding='SAME', activation='relu')(h)
+    h = layers.BatchNormalization()(h)
+    h = layers.Flatten()(h)
+    h = layers.Dense(256, activation='relu')(h)
+
     mean = layers.Dense(units=latent_dim)(h)
     log_var = layers.Dense(units=latent_dim)(h)
+
     return k.Model(inputs=[x, c], outputs=[mean, log_var], name='encoder')
 
-def make_decoder(output_shape=INPUT_SHAPE, latent_dim=LATENT_DIM, condition_size=CONDITION_SIZE):
-    # Decoder model
+
+def make_decoder(output_shape=(32, 32, 3), latent_dim=64, condition_size=10):
     z = layers.Input(shape=(latent_dim,))
     c = layers.Input(shape=(condition_size,))
-    con = layers.concatenate([z, c], axis=1)
-    h1 = layers.Dense(units=256, activation='relu')(con)
-    h1 = layers.BatchNormalization()(h1)
-    h2 = layers.Dense(units=512, activation='relu')(h1)
-    y = layers.Dense(units=np.prod(output_shape), activation='sigmoid')(h2)
-    y = layers.Reshape(output_shape)(y)
+
+    h = layers.concatenate([z, c])
+
+    h = layers.Dense(units=4 * 4 * 128, activation='relu')(h)
+    h = layers.Reshape((4, 4, 128))(h)
+    h = layers.Conv2DTranspose(filters=64, kernel_size=4, strides=(2, 2), padding='same', activation='relu')(h)
+    h = layers.BatchNormalization()(h)
+    h = layers.Conv2DTranspose(filters=32, kernel_size=4, strides=(2, 2), padding='same', activation='relu')(h)
+    h = layers.BatchNormalization()(h)
+
+    y = layers.Conv2DTranspose(filters=output_shape[-1], kernel_size=4, strides=(2, 2), activation='sigmoid', padding='same')(h)
+    
     return k.Model(inputs=[z, c], outputs=y, name='decoder')
 
-def make_cvae_model(latent_dim, condition_size, learning_rate, input_shape=(32, 32, 3), alpha=1, beta=1):
+
+def make_cvae_model(latent_dim=64, condition_size=10, learning_rate=0.001, input_shape=(32, 32, 3), alpha=1, beta=1):
     encoder = make_encoder(input_shape, latent_dim, condition_size)
     decoder = make_decoder(input_shape, latent_dim, condition_size)
 
     def sampling(args):
         mean, log_var = args
-        eps = tf.random.normal(shape=(tf.shape(mean)[0], latent_dim), mean=0., stddev=1.0)
-        return mean + tf.exp(log_var / 2.) * eps
+        batch = tf.shape(mean)[0]
+        dim = tf.shape(mean)[1]
+        epsilon = tf.keras.backend.random_normal(shape=(batch, dim))
+        return mean + tf.exp(0.5 * log_var) * epsilon
 
     x = layers.Input(shape=input_shape)
     c = layers.Input(shape=(condition_size,))
+
     mean, log_var = encoder([x, c])
     z = layers.Lambda(sampling, output_shape=(latent_dim,), name='sampling')([mean, log_var])
     y = decoder([z, c])
-    
+
     reconstruction_loss = k.losses.mean_squared_error(y_true=x, y_pred=y)
-    kl_loss = -0.5 * tf.reduce_mean(log_var - tf.square(mean) - tf.exp(log_var) + 1)
-    cvae_loss = alpha * reconstruction_loss + beta * kl_loss
-    
+    reconstruction_loss *= input_shape[0] * input_shape[1] * input_shape[2]
+
+    kl_loss = -0.5 * tf.reduce_sum(1 + log_var - tf.square(mean) - tf.exp(log_var), axis=-1)
+    kl_loss = tf.reduce_mean(kl_loss)
+
+    cvae_loss = tf.reduce_mean(alpha * reconstruction_loss + beta * kl_loss)
+
     cvae = k.Model(inputs=[x, c], outputs=y, name='cvae')
 
-    cvae.add_metric(reconstruction_loss, name='reconstruction_loss')
-    cvae.add_metric(kl_loss, name='kl_loss')
-    cvae.add_metric(cvae_loss, name='total_loss')
+    cvae.add_metric(tf.reduce_mean(reconstruction_loss), name='reconstruction_loss')
+    cvae.add_metric(tf.reduce_mean(kl_loss), name='kl_loss')
+    cvae.add_metric(tf.reduce_mean(cvae_loss), name='total_loss')
 
     cvae.add_loss(cvae_loss)
 
-    cvae.compile(optimizer=k.optimizers.Adam(learning_rate=learning_rate))
+    cvae.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate))
 
     return encoder, decoder, cvae
 
 def main(args):
     train_dataset, num_classes = load_dataset_samples(args.dataset, batch_size=args.batch_size, buffer_size=args.buffer_size)
     val_dataset = load_val_dataset_samples(args.dataset, batch_size=args.batch_size)
-    
+
     _, decoder, cvae = make_cvae_model(
         latent_dim=args.latent_dim,
         condition_size=num_classes,
@@ -269,7 +293,7 @@ def main(args):
     )
 
     save_images_callback = SaveImagesCallback(
-        model_name='CVAE',
+        model_name='t2-CVAE',
         dataset_name=args.dataset,
         decoder=decoder,
         latent_dim=args.latent_dim,

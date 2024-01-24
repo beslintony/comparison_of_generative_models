@@ -103,37 +103,6 @@ class SaveImagesCallback(Callback):
             print("Gen Image Min:", np.min(gen_images_array))
             print("Gen Image Max:", np.max(gen_images_array))
 
-            # # real_images_normalized = (real_images_array - np.min(real_images_array)) / (np.max(real_images_array) - np.min(real_images_array))
-            
-            # # # Visualize real images
-            # # plt.figure(figsize=(10, 10))
-            # # for i in range(min(25, real_images_normalized.shape[0])):
-            # #     plt.subplot(5, 5, i + 1)
-            # #     plt.imshow(real_images_normalized[i, :, :, :])
-            # #     plt.axis('off')
-            # # plt.suptitle('Real Images')
-            # # plt.show()
-
-            # # # Visualize generated images
-            # # plt.figure(figsize=(10, 10))
-            # # for i in range(min(25, gen_images_array.shape[0])):
-            # #     plt.subplot(5, 5, i + 1)
-            # #     plt.imshow(gen_images_array[i, :, :, :])
-            # #     plt.axis('off')
-            # # plt.suptitle('Generated Images')
-            # # plt.show()
-            
-            
-            # # real_mean = np.mean(real_images_array, axis=(0, 1, 2))
-            # # real_std = np.std(real_images_array, axis=(0, 1, 2))
-            # # gen_mean = np.mean(gen_images_array, axis=(0, 1, 2))
-            # # gen_std = np.std(gen_images_array, axis=(0, 1, 2))
-
-            # # print("Real Image Mean:", real_mean)
-            # # print("Real Image Std Dev:", real_std)
-            # # print("Generated Image Mean:", gen_mean)
-            # # print("Generated Image Std Dev:", gen_std)
-
             # Calculate and print evaluation metrics
             is_avg, is_std = self.evaluator.calculate_inception_score(
                 gen_images_array[:args.inception_score_samples])
@@ -205,16 +174,23 @@ def make_model(SIZE=(32, 32, 3), LATENT_DIM=10, LR=1e-4, BETA=1.0):
     e = layers.BatchNormalization()(e)
     e = layers.Conv2D(filters=64, kernel_size=4, strides=(2, 2), padding='SAME', activation='relu')(e)
     e = layers.BatchNormalization()(e)
+    e = layers.Conv2D(filters=128, kernel_size=4, strides=(2, 2), padding='SAME', activation='relu')(e)
+    e = layers.BatchNormalization()(e)
     e = layers.Flatten()(e)
+    e = layers.Dense(256, activation='relu')(e)
+    
     z_mean = layers.Dense(LATENT_DIM, name='z_mean')(e)
     z_log_var = layers.Dense(LATENT_DIM, name='z_log_var')(e)
     encoder = k.Model(inputs=encoder_inputs, outputs=[z_mean, z_log_var], name='encoder')
 
     # Decoder
     decoder_inputs = layers.Input(shape=(LATENT_DIM,), name='decoder_input')
-    d = layers.Dense(units=8 * 8 * 64, activation='relu')(decoder_inputs)
-    d = layers.Reshape((8, 8, 64))(d)
+    d = layers.Dense(units=4 * 4 * 128, activation='relu')(decoder_inputs)
+    d = layers.Reshape((4, 4, 128))(d)
+    d = layers.Conv2DTranspose(filters=64, kernel_size=4, strides=(2, 2), padding="SAME", activation='relu')(d)
+    d = layers.BatchNormalization()(d)
     d = layers.Conv2DTranspose(filters=32, kernel_size=4, strides=(2, 2), padding="SAME", activation='relu')(d)
+    d = layers.BatchNormalization()(d)
     d = layers.Conv2DTranspose(filters=3, kernel_size=4, strides=(2, 2), padding="SAME", activation='sigmoid')(d)
     decoder = k.Model(inputs=decoder_inputs, outputs=d, name='decoder')
 
@@ -326,9 +302,3 @@ if __name__ == "__main__":
     
     main(args)
     
-    
-    
-# python t1_vae.py --dataset fashion_mnist --latent_dim 50 --learning_rate 1e-4 --epochs 1000 --batch_size 128 --buffer_size 60000 --examples_to_generate 25 --save_image_freq 100 --save_model_freq 1000 --eval_freq 200 --eval_batch_size 64 --fid_gen_samples 10000 --fid_real_samples 10000 --inception_score_samples 10000 --wasserstein_distance_samples 10000
-# python t1_vae.py --dataset cifar10 --latent_dim 100 --learning_rate 1e-4 --epochs 2000 --batch_size 256 --buffer_size 50000 --examples_to_generate 25 --save_image_freq 100 --save_model_freq 1000 --eval_freq 200 --eval_batch_size 64 --fid_gen_samples 10000 --fid_real_samples 10000 --inception_score_samples 10000 --wasserstein_distance_samples 10000
-# python t1_vae.py --dataset svhn --latent_dim 150 --learning_rate 1e-4 --epochs 1500 --batch_size 128 --buffer_size 73257 --examples_to_generate 25 --save_image_freq 100 --save_model_freq 1000 --eval_freq 200 --eval_batch_size 64 --fid_gen_samples 10000 --fid_real_samples 10000 --inception_score_samples 10000 --wasserstein_distance_samples 10000
-# python t1_vae.py --dataset imagenet --latent_dim 256 --learning_rate 1e-4 --epochs 5000 --batch_size 512 --buffer_size 1281167 --examples_to_generate 25 --save_image_freq 100 --save_model_freq 1000 --eval_freq 200 --eval_batch_size 64 --fid_gen_samples 10000 --fid_real_samples 10000 --inception_score_samples 10000 --wasserstein_distance_samples 10000
