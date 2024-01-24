@@ -126,7 +126,7 @@ def make_generator(latent_dim):
         layers.Conv2DTranspose(64, 5, strides=2, padding='same', use_bias=False),
         layers.BatchNormalization(),
         layers.LeakyReLU(),
-        layers.Conv2DTranspose(3, 5, strides=2, padding='same', use_bias=False, activation='tanh')
+        layers.Conv2DTranspose(3, 5, strides=2, padding='same', use_bias=False, activation='sigmoid')
     ])
 
 def make_discriminator(img_shape):

@@ -139,7 +139,7 @@ def define_generator(latent_dim, n_classes=10, alpha=0.2):
     gen = LeakyReLU(alpha=alpha)(gen)
 
     # Output
-    out_layer = Conv2D(3, (8, 8), activation='tanh', padding='same')(gen)
+    out_layer = Conv2D(3, (8, 8), activation='sigmoid', padding='same')(gen)
 
     model = Model([in_lat, in_label], out_layer)
     return model
