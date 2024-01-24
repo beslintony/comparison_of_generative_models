@@ -295,6 +295,7 @@ if __name__ == "__main__":
     parser.add_argument('--learning_rate', type=float, default=0.0002, help='Learning rate for Adam optimizer')
     parser.add_argument('--alpha', type=float, default=0.2, help='Alpha value for LeakyReLU')
     parser.add_argument('--beta1', type=float, default=0.5, help='Beta1 value for Adam optimizer')
+    parser.add_argument('--examples_to_generate', type=int, default=25, help='Number of examples to generate in each image')
     parser.add_argument('--dropout_rate', type=float, default=0.4, help='Dropout rate in the discriminator')
     parser.add_argument('--save_image_freq', type=int, default=1, help='Frequency of saving generated images')
     parser.add_argument('--save_model_freq', type=int, default=10, help='Frequency of saving the generator model')

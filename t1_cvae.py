@@ -15,15 +15,6 @@ from dt import load_dataset, load_validation_dataset
 from model_eval import ModelEvaluator
 
 # Define constants
-LATENT_DIM = 10
-LEARNING_RATE = 1e-4
-BATCH_SIZE = 128
-EPOCHS = 50
-CONDITION_SIZE = 10
-INPUT_SHAPE = (32, 32, 3)
-EXAMPLES_TO_GENERATE = 25
-SAVE_IMAGE_FREQ = 5
-SAVE_MODEL_FREQ = 10
 RANDOM_SEED = 42
 
 np.random.seed(RANDOM_SEED)
@@ -339,7 +330,7 @@ if __name__ == "__main__":
     parser.add_argument('--learning_rate', type=float, default=1e-4, help='Learning rate')
     parser.add_argument('--epochs', type=int, default=50000, help='Number of epochs')
     parser.add_argument('--batch_size', type=int, default=512, help='Batch size')
-    parser.add_argument('--buffer_size', type=int, default=60000, help='Buffer size for dataset shuffling')
+    parser.add_argument('--buffer_size', type=int, default=50000, help='Buffer size for dataset shuffling')
     parser.add_argument('--examples_to_generate', type=int, default=25, help='Number of examples to generate in each image')
     parser.add_argument('--save_image_freq', type=int, default=1, help='Frequency of saving generated images')
     parser.add_argument('--save_model_freq', type=int, default=10, help='Frequency of saving the generator model')
