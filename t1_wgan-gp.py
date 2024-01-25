@@ -145,7 +145,7 @@ def make_generator(input_shape):
         layers.BatchNormalization(),
         layers.LeakyReLU(),
         layers.Conv2DTranspose(
-            3, 5, strides=2, padding='same', use_bias=False, activation='sigmoid')
+            3, 5, strides=2, padding='same', use_bias=False, activation='tanh')
     ])
 
 # Wasserstein Loss
