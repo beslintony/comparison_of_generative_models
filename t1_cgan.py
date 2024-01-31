@@ -25,9 +25,10 @@ np.random.seed(RANDOM_SEED)
 tf.random.set_seed(RANDOM_SEED)
 
 class SaveImagesCallback(k.Callback):
-    def __init__(self, model_name, dataset_name, generator, latent_dim, examples_to_generate=25, save_freq=1, save_model_freq=10):
+    def __init__(self, model_name, dataset_name, num_classes, generator, latent_dim, examples_to_generate=25, save_freq=1, save_model_freq=10):
         self.model_name = model_name
         self.dataset_name = dataset_name
+        self.num_classes = num_classes
         self.generator = generator
         self.latent_dim = latent_dim
         self.examples_to_generate = examples_to_generate
@@ -37,9 +38,9 @@ class SaveImagesCallback(k.Callback):
 
     def on_epoch_end(self, epoch, logs=None):
         if epoch % self.save_freq == 0:
-            latent_samples, labels = generate_latent_points(self.latent_dim, self.examples_to_generate)
+            latent_samples, labels = generate_latent_points(self.latent_dim, self.examples_to_generate, n_classes=self.num_classes)
             generated_images = self.generator.predict([latent_samples, labels])
-            generated_images = (generated_images + 1) / 2.0
+            generated_images = np.clip(generated_images, 0.0, 1.0)
             self.save_generated_images(generated_images, epoch)
 
         if epoch % self.save_model_freq == 0:
@@ -85,7 +86,7 @@ class SaveImagesCallback(k.Callback):
 
         return log_folder
 
-def define_discriminator(in_shape=(32, 32, 3), n_classes=10, dropout_rate=0.4, learning_rate=0.0002, beta1=0.5, alpha=0.2):
+def define_discriminator(in_shape=(32, 32, 3), n_classes=10, dropout_rate=0.4, learning_rate=0.0002, beta_1=0.5, alpha=0.2, beta_2=0.999):
     # Label input
     in_label = Input(shape=(1,))
     li = Embedding(n_classes, 50)(in_label)
@@ -107,7 +108,7 @@ def define_discriminator(in_shape=(32, 32, 3), n_classes=10, dropout_rate=0.4, l
     out_layer = Dense(1, activation='sigmoid')(fe)
 
     model = Model([in_image, in_label], out_layer)
-    opt = Adam(learning_rate=learning_rate, beta_1=beta1)
+    opt = Adam(learning_rate=learning_rate, beta_1=beta_1, beta_2=beta_2)
     model.compile(loss='binary_crossentropy', optimizer=opt, metrics=['accuracy'])
     return model
 
@@ -139,12 +140,12 @@ def define_generator(latent_dim, n_classes=10, alpha=0.2):
     gen = LeakyReLU(alpha=alpha)(gen)
 
     # Output
-    out_layer = Conv2D(3, (8, 8), activation='tanh', padding='same')(gen)
+    out_layer = Conv2D(3, (8, 8), activation='sigmoid', padding='same')(gen)
 
     model = Model([in_lat, in_label], out_layer)
     return model
 
-def define_gan(g_model, d_model, learning_rate=0.0002, beta1=0.5):
+def define_gan(g_model, d_model, learning_rate=0.0002, beta_1=0.5, beta_2=0.999):
     d_model.trainable = False
     # Connect generator and discriminator
     gen_noise, gen_label = g_model.input
@@ -153,7 +154,7 @@ def define_gan(g_model, d_model, learning_rate=0.0002, beta1=0.5):
     # Define gan model as taking noise and label and outputting a classification
     model = Model([gen_noise, gen_label], gan_output)
     # Compile model
-    opt = Adam(learning_rate=learning_rate, beta_1=beta1)
+    opt = Adam(learning_rate=learning_rate, beta_1=beta_1, beta_2=beta_2)
     model.compile(loss='binary_crossentropy', optimizer=opt)
     return model
 
@@ -174,15 +175,15 @@ def generate_real_samples(dataset, n_samples):
 
     return [X, labels], y
 
-def generate_latent_points(latent_dim, n_samples, n_classes=10):
+def generate_latent_points(latent_dim, n_samples, n_classes):
     x_input = np.random.randn(latent_dim * n_samples)
     z_input = x_input.reshape(n_samples, latent_dim)
     labels = np.random.randint(0, n_classes, n_samples)
     return [z_input, labels]
 
-def generate_fake_samples(generator, latent_dim, n_samples):
+def generate_fake_samples(generator, latent_dim, n_samples, n_classes):
     # Generate random latent points and labels using TensorFlow
-    z_input, labels_input = generate_latent_points(latent_dim, n_samples)
+    z_input, labels_input = generate_latent_points(latent_dim, n_samples, n_classes)
 
     # Convert latent points and labels to TensorFlow tensors
     z_input = tf.constant(z_input, dtype=tf.float32)
@@ -196,7 +197,7 @@ def generate_fake_samples(generator, latent_dim, n_samples):
 
     return [images, labels_input], y
 
-def train_and_evaluate(g_model, d_model, gan_model, dataset, latent_dim, n_epochs=100, n_batch=128, callback=None):
+def train_and_evaluate(g_model, d_model, gan_model, dataset, latent_dim, n_epochs=100, n_batch=128, num_classes=10, callback=None):
     evaluator = ModelEvaluator(batch_size=args.eval_batch_size)
     
     bat_per_epo = args.buffer_size // args.batch_size
@@ -213,12 +214,12 @@ def train_and_evaluate(g_model, d_model, gan_model, dataset, latent_dim, n_epoch
             d_loss_real, _ = d_model.train_on_batch([X_real, labels_real], y_real)
             d_losses_real.append(d_loss_real)
 
-            [X_fake, labels], y_fake = generate_fake_samples(g_model, latent_dim, half_batch)
+            [X_fake, labels], y_fake = generate_fake_samples(g_model, latent_dim, half_batch, num_classes)
             d_loss_fake, _ = d_model.train_on_batch([X_fake, labels], y_fake)
             d_losses_fake.append(d_loss_fake)
 
             # prepare points in latent space as input for the generator
-            [z_input, labels_input] = generate_latent_points(latent_dim, n_batch)
+            [z_input, labels_input] = generate_latent_points(latent_dim, n_batch, num_classes)
 
             # The generator wants the discriminator to label the generated samples as valid (ones)
             y_gan = np.ones((n_batch, 1))
@@ -242,7 +243,7 @@ def train_and_evaluate(g_model, d_model, gan_model, dataset, latent_dim, n_epoch
             number_of_samples = max(args.fid_gen_samples, args.inception_score_samples, args.wasserstein_distance_samples)
             
             real_images_for_evaluation, _ = generate_real_samples(dataset, n_samples=number_of_samples)
-            [z_input_eval, labels_input_eval] = generate_latent_points(latent_dim, n_samples=number_of_samples)
+            [z_input_eval, labels_input_eval] = generate_latent_points(latent_dim, n_samples=number_of_samples, n_classes=num_classes)
             generated_images_for_evaluation = g_model.predict([z_input_eval, labels_input_eval])
 
             real_images_array = real_images_for_evaluation[0]
@@ -292,11 +293,13 @@ if __name__ == "__main__":
     parser.add_argument('--batch_size', type=int, default=512, help='Batch size for training')
     parser.add_argument('--buffer_size', type=int, default=50000, help='Buffer size for shuffling')
     parser.add_argument('--dataset', type=str, default='fashion_mnist', choices=['fashion_mnist', 'cifar10', 'svhn' ,'imagenet'], help='Dataset name')
-    parser.add_argument('--learning_rate', type=float, default=0.0002, help='Learning rate for Adam optimizer')
+    parser.add_argument('--g_lr', type=float, default=0.0002, help='Generator learning rate for Adam optimizer')
+    parser.add_argument('--d_lr', type=float, default=0.0002, help='Discriminator learning rate for Adam optimizer')
     parser.add_argument('--alpha', type=float, default=0.2, help='Alpha value for LeakyReLU')
-    parser.add_argument('--beta1', type=float, default=0.5, help='Beta1 value for Adam optimizer')
-    parser.add_argument('--examples_to_generate', type=int, default=25, help='Number of examples to generate in each image')
+    parser.add_argument('--beta_1', type=float, default=0.5, help='Beta_1 value for Adam optimizer')
+    parser.add_argument('--beta_2', type=float, default=0.999, help='Beta_2 value for Adam optimizer')
     parser.add_argument('--dropout_rate', type=float, default=0.4, help='Dropout rate in the discriminator')
+    parser.add_argument('--examples_to_generate', type=int, default=25, help='Number of examples to generate in each image')
     parser.add_argument('--save_image_freq', type=int, default=1, help='Frequency of saving generated images')
     parser.add_argument('--save_model_freq', type=int, default=10, help='Frequency of saving the generator model')
     parser.add_argument('--eval_freq', type=int, default=1, help='Frequency of printing evaluation metrics')
@@ -312,13 +315,14 @@ if __name__ == "__main__":
     
     dataset, num_classes = load_dataset(args.dataset, buffer_size=args.buffer_size, batch_size=args.batch_size)
     
-    d_model = define_discriminator(n_classes=num_classes, dropout_rate=args.dropout_rate, learning_rate=args.learning_rate, beta1=args.beta1)
+    d_model = define_discriminator(n_classes=num_classes, dropout_rate=args.dropout_rate, learning_rate=args.d_lr, alpha=args.alpha, beta_1=args.beta_1, beta_2=args.beta_2)
     g_model = define_generator(latent_dim, alpha=args.alpha, n_classes=num_classes)
-    gan_model = define_gan(g_model, d_model, learning_rate=args.learning_rate, beta1=args.beta1)
+    gan_model = define_gan(g_model, d_model, learning_rate=args.g_lr, beta_1=args.beta_1, beta_2=args.beta_2)
 
     save_callback = SaveImagesCallback(
         model_name='CGAN',
         dataset_name=args.dataset,
+        num_classes=num_classes,
         generator=g_model,
         latent_dim=latent_dim,
         examples_to_generate=25,
@@ -327,15 +331,16 @@ if __name__ == "__main__":
     )
     
     # Create a TensorBoard callback
-    # # log_dir = os.path.join('logs', f'{args.output_dir}_{args.dataset}_{datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}')
     tensorboard_writer = tf.summary.create_file_writer(save_callback.log_folder)
     
     # Log hyperparameters to TensorBoard with a common prefix
     with tensorboard_writer.as_default():
         tf.summary.scalar('hyperparameters/latent_dim', args.latent_dim, step=0)
-        tf.summary.scalar('hyperparameters/learning_rate', args.learning_rate, step=0)
+        tf.summary.scalar('hyperparameters/g_lr', args.g_lr, step=0)
+        tf.summary.scalar('hyperparameters/d_lr', args.d_lr, step=0)
         tf.summary.scalar('hyperparameters/alpha', args.alpha, step=0)
-        tf.summary.scalar('hyperparameters/beta1', args.beta1, step=0)
+        tf.summary.scalar('hyperparameters/beta_1', args.beta_1, step=0)
+        tf.summary.scalar('hyperparameters/beta_2', args.beta_2, step=0)
         tf.summary.scalar('hyperparameters/dropout_rate', args.dropout_rate, step=0)
         tf.summary.scalar('hyperparameters/batch_size', args.batch_size, step=0)
         tf.summary.scalar('hyperparameters/buffer_size', args.buffer_size, step=0)
@@ -349,5 +354,14 @@ if __name__ == "__main__":
         tf.summary.scalar('hyperparameters/inception_score_samples', args.inception_score_samples, step=0)
         tf.summary.scalar('hyperparameters/wasserstein_distance_samples', args.wasserstein_distance_samples, step=0)
 
-    train_and_evaluate(g_model, d_model, gan_model, dataset, latent_dim, n_epochs=args.epochs, n_batch=args.batch_size,
-          callback=save_callback)
+    train_and_evaluate(
+        g_model=g_model,
+        d_model=d_model,
+        gan_model= gan_model,
+        dataset= dataset,
+        latent_dim= latent_dim,
+        n_epochs=args.epochs,
+        n_batch=args.batch_size,
+        num_classes=num_classes,
+        callback=save_callback
+        )
