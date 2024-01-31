@@ -35,9 +35,12 @@ def parse_arguments():
     parser = argparse.ArgumentParser(description='Wasserstein GAN Training Script')
     parser.add_argument('--dataset', type=str, default='fashion_mnist', choices=['fashion_mnist', 'cifar10', 'svhn' ,'imagenet'], help='Dataset name')
     parser.add_argument('--latent_dim', type=int, default=100, help='Size of the latent space')
-    parser.add_argument('--img_size', type=int, default=32, help='Size of the generated images')
     parser.add_argument('--batch_size', type=int, default=512, help='Batch size for training')
-    parser.add_argument('--learning_rate', type=float, default=1e-4, help='Learning rate')
+    parser.add_argument('--d_lr', type=float, default=0.0004, help='Discriminator learning rate')
+    parser.add_argument('--g_lr', type=float, default=0.0004, help='Generator learning rate')
+    parser.add_argument('--beta_1', type=float, default=0.5, help='Beta_1 value for Adam optimizer')
+    parser.add_argument('--beta_2', type=float, default=0.999, help='Beta_2 value for Adam optimizer')
+    parser.add_argument('--dropout_rate', type=float, default=0.3, help='Dropout rate in the discriminator')
     parser.add_argument('--epochs', type=int, default=10000, help='Number of training epochs')
     parser.add_argument('--clip_val', type=int, default=0.01, help='Value for weight clipping')
     parser.add_argument('--buffer_size', type=int, default=50000, help='Buffer size for dataset shuffling')
@@ -126,17 +129,17 @@ def make_generator(latent_dim):
         layers.Conv2DTranspose(64, 5, strides=2, padding='same', use_bias=False),
         layers.BatchNormalization(),
         layers.LeakyReLU(),
-        layers.Conv2DTranspose(3, 5, strides=2, padding='same', use_bias=False, activation='tanh')
+        layers.Conv2DTranspose(3, 5, strides=2, padding='same', use_bias=False, activation='sigmoid')
     ])
 
-def make_discriminator(img_shape):
+def make_discriminator(img_shape, dropout_rate):
     return tf.keras.Sequential([
         layers.Conv2D(64, 5, strides=2, padding='same', input_shape=img_shape),
         layers.LeakyReLU(),
-        layers.Dropout(0.3),
+        layers.Dropout(dropout_rate),
         layers.Conv2D(128, 5, strides=2, padding='same'),
         layers.LeakyReLU(),
-        layers.Dropout(0.3),
+        layers.Dropout(dropout_rate),
         layers.Flatten(),
         layers.Dense(1)
     ])
@@ -249,13 +252,13 @@ if __name__ == "__main__":
     args = parse_arguments()
 
     # Initialize generator and discriminator
-    img_shape = (args.img_size, args.img_size, 3)
+    img_shape = (32, 32, 3)
     generator = make_generator(args.latent_dim)
-    discriminator = make_discriminator(img_shape)
+    discriminator = make_discriminator(img_shape, args.dropout_rate)
 
     # Optimizers
-    generator_optimizer = tf.keras.optimizers.Adam(args.learning_rate, beta_1=0.5, beta_2=0.999)
-    discriminator_optimizer = tf.keras.optimizers.Adam(args.learning_rate, beta_1=0.5, beta_2=0.999)
+    generator_optimizer = tf.keras.optimizers.Adam(args.g_lr, beta_1=args.beta_1, beta_2=args.beta_2)
+    discriminator_optimizer = tf.keras.optimizers.Adam(args.g_lr, beta_1=args.beta_1, beta_2=args.beta_2)
     
     save_callback = SaveImagesCallback(
         model_name='WGAN',
@@ -272,7 +275,11 @@ if __name__ == "__main__":
     # Log hyperparameters to TensorBoard with a common prefix
     with tensorboard_writer.as_default():
         tf.summary.scalar('hyperparameters/latent_dim', args.latent_dim, step=0)
-        tf.summary.scalar('hyperparameters/learning_rate', args.learning_rate, step=0)
+        tf.summary.scalar('hyperparameters/d_lr', args.d_lr, step=0)
+        tf.summary.scalar('hyperparameters/g_lr', args.g_lr, step=0)
+        tf.summary.scalar('hyperparameters/beta_1', args.beta_1, step=0)
+        tf.summary.scalar('hyperparameters/beta_2', args.beta_2, step=0)
+        tf.summary.scalar('hyperparameters/dropout_rate', args.dropout_rate, step=0)
         tf.summary.scalar('hyperparameters/epochs', args.epochs, step=0)
         tf.summary.scalar('hyperparameters/batch_size', args.batch_size, step=0)
         tf.summary.scalar('hyperparameters/buffer_size', args.buffer_size, step=0)

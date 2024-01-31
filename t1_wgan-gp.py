@@ -34,6 +34,9 @@ def parse_args():
     parser.add_argument('--batch_size', type=int, default=512, help='Batch size')
     parser.add_argument('--d_lr', type=float, default=0.0004, help='Discriminator learning rate')
     parser.add_argument('--g_lr', type=float, default=0.0004, help='Generator learning rate')
+    parser.add_argument('--beta_1', type=float, default=0.5, help='Beta_1 value for Adam optimizer')
+    parser.add_argument('--beta_2', type=float, default=0.999, help='Beta_2 value for Adam optimizer')
+    parser.add_argument('--dropout_rate', type=float, default=0.3, help='Dropout rate in the discriminator')
     parser.add_argument('--gp_weight', type=float, default=10.0, help='Weight of the gradient penalty term')
     parser.add_argument('--examples_to_generate', type=int, default=25, help='Number of examples to generate in each image')
     parser.add_argument('--save_image_freq', type=int, default=1, help='Frequency of saving generated images')
@@ -116,15 +119,15 @@ def get_random_z(latent_dim, batch_size):
     return tf.random.uniform([batch_size, latent_dim], minval=-1, maxval=1)
 
 # Define discriminator
-def make_discriminator(input_shape):
+def make_discriminator(input_shape, dropout_rate=0.3):
     return tf.keras.Sequential([
         layers.Conv2D(64, 5, strides=2, padding='same',
                       input_shape=input_shape),
         layers.LeakyReLU(),
-        layers.Dropout(0.3),
+        layers.Dropout(dropout_rate),
         layers.Conv2D(128, 5, strides=2, padding='same'),
         layers.LeakyReLU(),
-        layers.Dropout(0.3),
+        layers.Dropout(dropout_rate),
         layers.Flatten(),
         layers.Dense(1)
     ])
@@ -145,7 +148,7 @@ def make_generator(input_shape):
         layers.BatchNormalization(),
         layers.LeakyReLU(),
         layers.Conv2DTranspose(
-            3, 5, strides=2, padding='same', use_bias=False, activation='tanh')
+            3, 5, strides=2, padding='same', use_bias=False, activation='sigmoid')
     ])
 
 # Wasserstein Loss
@@ -175,11 +178,11 @@ def gradient_penalty(generator, real_images, fake_images):
 
 # Generator & Discriminator
 G = make_generator((args.latent_dim,))
-D = make_discriminator((32, 32, 3))
+D = make_discriminator((32, 32, 3), dropout_rate=args.dropout_rate)
 
 # Optimizer
-g_optim = tf.keras.optimizers.Adam(args.g_lr, beta_1=0.5, beta_2=0.999)
-d_optim = tf.keras.optimizers.Adam(args.d_lr, beta_1=0.5, beta_2=0.999)
+g_optim = tf.keras.optimizers.Adam(args.g_lr, beta_1=args.beta_1, beta_2=args.beta_2)
+d_optim = tf.keras.optimizers.Adam(args.g_lr, beta_1=args.beta_1, beta_2=args.beta_2)
 
 # Loss function
 d_loss_fn, g_loss_fn = get_loss_fn()
@@ -303,6 +306,9 @@ if __name__ == "__main__":
         tf.summary.scalar('hyperparameters/buffer_size', args.buffer_size, step=0)
         tf.summary.scalar('hyperparameters/d_lr', args.d_lr, step=0)
         tf.summary.scalar('hyperparameters/g_lr', args.g_lr, step=0)
+        tf.summary.scalar('hyperparameters/beta_1', args.beta_1, step=0)
+        tf.summary.scalar('hyperparameters/beta_2', args.beta_2, step=0)
+        tf.summary.scalar('hyperparameters/dropout_rate', args.dropout_rate, step=0)
         tf.summary.scalar('hyperparameters/gp_weight', args.gp_weight, step=0)
         tf.summary.scalar('hyperparameters/examples_to_generate', args.examples_to_generate, step=0)
         tf.summary.scalar('hyperparameters/save_image_freq', args.save_image_freq, step=0)
