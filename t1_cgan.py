@@ -204,19 +204,21 @@ def train_and_evaluate(g_model, d_model, gan_model, dataset, latent_dim, n_epoch
     half_batch = n_batch // 2
 
     for i in range(n_epochs):
-        d_losses_real = []
-        d_losses_fake = []
+        d_losses = []
         g_losses = []
+        total_losses = []
 
         for j in range(bat_per_epo):
             # Train the discriminator on real and fake images separately (half batch each)
             [X_real, labels_real], y_real = generate_real_samples(dataset, half_batch)
             d_loss_real, _ = d_model.train_on_batch([X_real, labels_real], y_real)
-            d_losses_real.append(d_loss_real)
 
             [X_fake, labels], y_fake = generate_fake_samples(g_model, latent_dim, half_batch, num_classes)
             d_loss_fake, _ = d_model.train_on_batch([X_fake, labels], y_fake)
-            d_losses_fake.append(d_loss_fake)
+            
+            # Calculate total discriminator loss
+            d_loss = d_loss_real + d_loss_fake
+            d_losses.append(d_loss)
 
             # prepare points in latent space as input for the generator
             [z_input, labels_input] = generate_latent_points(latent_dim, n_batch, num_classes)
@@ -225,15 +227,17 @@ def train_and_evaluate(g_model, d_model, gan_model, dataset, latent_dim, n_epoch
             y_gan = np.ones((n_batch, 1))
             g_loss = gan_model.train_on_batch([z_input, labels_input], y_gan)
             g_losses.append(g_loss)
+            
+            total_losses.append(d_loss + g_loss)
 
             # Print losses on this batch
-            print('Epoch>%d, Batch%d/%d, d1=%.3f, d2=%.3f g=%.3f' %
-                    (i + 1, j + 1, bat_per_epo, d_loss_real, d_loss_fake, g_loss))
+            print('Epoch>%d, Batch%d/%d, d=%.3f, g=%.3f' %
+                    (i + 1, j + 1, bat_per_epo, d_loss, total_losses))
 
         # Calculate mean losses for the epoch
-        mean_d_loss_real = np.mean(d_losses_real)
-        mean_d_loss_fake = np.mean(d_losses_fake)
+        mean_d_loss = np.mean(d_losses)
         mean_g_loss = np.mean(g_losses)
+        mean_total_loss = np.mean(total_losses)
 
         if callback is not None:
             callback.on_epoch_end(i + 1)
@@ -278,9 +282,9 @@ def train_and_evaluate(g_model, d_model, gan_model, dataset, latent_dim, n_epoch
             
         # Log losses to TensorBoard manually
         with tensorboard_writer.as_default():
-            tf.summary.scalar('d_loss_real', mean_d_loss_real, step=i + 1)
-            tf.summary.scalar('d_loss_fake', mean_d_loss_fake, step=i + 1)
+            tf.summary.scalar('d_loss', mean_d_loss, step=i + 1)
             tf.summary.scalar('g_loss', mean_g_loss, step=i + 1)
+            tf.summary.scalar('total_loss', mean_total_loss, step=i + 1)
 
     # Save model weights at the end of training
     g_model.save_weights(os.path.join(save_callback.log_folder, 'final_generator_weights.h5'))
