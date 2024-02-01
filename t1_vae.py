@@ -12,7 +12,7 @@ import numpy as np
 from tensorflow import keras as k
 from tensorflow.keras import layers
 import matplotlib.pyplot as plt
-from tensorflow.keras.callbacks import Callback
+import mlflow
 
 from dt import load_dataset, load_validation_dataset
 from model_eval import ModelEvaluator
@@ -25,9 +25,7 @@ RANDOM_SEED = 42
 
 np.random.seed(RANDOM_SEED)
 tf.random.set_seed(RANDOM_SEED)
-
-
-class SaveImagesCallback(Callback):
+class SaveCallback(k.callbacks.Callback):
     def __init__(
         self,
         model_name,
@@ -43,6 +41,7 @@ class SaveImagesCallback(Callback):
         fid_real_samples=10000,
         inception_score_samples=10000,
         wasserstein_distance_samples=10000,
+        exp_no=0
     ):
 
         self.model_name = model_name
@@ -52,7 +51,8 @@ class SaveImagesCallback(Callback):
         self.examples_to_generate = examples_to_generate
         self.save_freq = save_freq
         self.save_model_freq = save_model_freq
-
+        
+        self.exp_no = exp_no
         self.log_folder = self.create_log_folder()
 
         self.eval_freq = eval_freq
@@ -62,8 +62,6 @@ class SaveImagesCallback(Callback):
         self.fid_real_samples = fid_real_samples
         self.inception_score_samples = inception_score_samples
         self.wasserstein_distance_samples = wasserstein_distance_samples
-
-        self.tensorboard_writer = tf.summary.create_file_writer(self.log_folder)
         
         # Loss metrics
         self.reconstruction_metric = tf.metrics.Mean(name='reconstruction_loss')
@@ -75,8 +73,12 @@ class SaveImagesCallback(Callback):
             latent_samples = np.random.normal(size=(self.examples_to_generate, self.latent_dim))
             generated_images = self.decoder.predict(latent_samples)
             generated_images = np.clip(generated_images, 0.0, 1.0)
-            self.save_generated_images(generated_images, epoch + 1)
-
+            folder_path = self.save_generated_images(generated_images, epoch + 1)
+            
+        if folder_path is not None:
+            # Log the generated images as artifacts in MLflow
+            mlflow.log_artifact(folder_path)
+        
         if (epoch + 1) % self.save_model_freq == 0:
             self.save_model(epoch + 1)
 
@@ -112,16 +114,18 @@ class SaveImagesCallback(Callback):
             fid_score = self.evaluator.calculate_fid(real_images_array[:args.fid_real_samples],
                                                      gen_images_array[:args.fid_gen_samples])
             print(
-                f'Epoch {epoch + 1} - FID: {fid_score}, Inception Score: {is_avg:.4f} ± {is_std:.4f}, Wasserstein Distance: {wasserstein_distance}')
+                f'Epoch= {epoch + 1}, FID= {fid_score}, Inception Score= {is_avg:.4f} ± {is_std:.4f}, Wasserstein Distance= {wasserstein_distance}')
 
-            # Log evaluation metrics to TensorBoard manually
-            with self.tensorboard_writer.as_default():
-                tf.summary.experimental.set_step(epoch + 1)
-                tf.summary.scalar('fid_score', fid_score, step=epoch + 1)
-                tf.summary.scalar('inception_score_avg', is_avg, step=epoch + 1)
-                tf.summary.scalar('inception_score_std', is_std, step=epoch + 1)
-                tf.summary.scalar('wasserstein_distance', wasserstein_distance, step=epoch + 1)
-            
+            mlflow.log_metric("FID Score", fid_score, step=epoch + 1)
+            mlflow.log_metric("Avg. Inceprion Score", is_avg, step=epoch + 1)
+            mlflow.log_metric("Std. Inception Score", is_std, step=epoch + 1)
+            mlflow.log_metric("Wasserstein Distance", wasserstein_distance, step=epoch + 1)
+            mlflow.log_metric("Epoch", epoch + 1, step=epoch + 1)
+        
+        mlflow.log_metric("Recon. Loss", self.reconstruction_metric.result(), step=epoch + 1)
+        mlflow.log_metric("KL Loss", self.kl_metric.result(), step=epoch + 1)
+        mlflow.log_metric("Total Loss", self.total_loss_metric.result(), step=epoch + 1)
+
         # Reset metrics for the next epoch
         self.reconstruction_metric.reset_states()
         self.kl_metric.reset_states()
@@ -143,6 +147,8 @@ class SaveImagesCallback(Callback):
         file_name = f'{folder_path}/generated_images_epoch_{epoch}.png'
         plt.savefig(file_name)
         plt.close()
+        
+        return folder_path
 
     def save_model(self, epoch):
         model_folder = os.path.join(self.log_folder, 'models')
@@ -151,6 +157,9 @@ class SaveImagesCallback(Callback):
         model_name = f'{self.model_name}_epoch_{epoch}.h5'
         model_path = os.path.join(model_folder, model_name)
         self.decoder.save(model_path)
+        
+        # Log the model weights as artifacts in MLflow
+        mlflow.log_artifact(model_path)
 
     @staticmethod
     def create_folder(folder):
@@ -159,7 +168,8 @@ class SaveImagesCallback(Callback):
 
     def create_log_folder(self):
         current_time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        log_folder = os.path.join('logs', f'{self.model_name}_{self.dataset_name}_{current_time}')
+        base_log_folder = 'logs'
+        log_folder = os.path.join(base_log_folder, self.model_name, self.dataset_name, f'{self.exp_no}_{current_time}')
 
         self.create_folder(log_folder)
         self.create_folder(os.path.join(log_folder, 'images'))
@@ -229,9 +239,9 @@ def main(args):
                                     with_labels=False)
     val_dataset, _ = load_validation_dataset(args.dataset, batch_size=args.batch_size, with_labels=False)
 
-    _, decoder, vae = make_model(SIZE=(32, 32, 3), LATENT_DIM=args.latent_dim, LR=args.learning_rate, BETA=args.beta)
+    _, decoder, vae = make_model(SIZE=(32, 32, 3), LATENT_DIM=args.latent_dim, LR=args.learning_rate)
 
-    save_images_callback = SaveImagesCallback(
+    save_callback = SaveCallback(
         model_name='VAE',
         dataset_name=args.dataset,
         decoder=decoder,
@@ -245,29 +255,10 @@ def main(args):
         fid_real_samples=args.fid_real_samples,
         inception_score_samples=args.inception_score_samples,
         wasserstein_distance_samples=args.wasserstein_distance_samples,
+        exp_no=0
     )
-
-    # Create a TensorBoard callback
-    tensorboard_callback = k.callbacks.TensorBoard(log_dir=save_images_callback.log_folder)
-
-    callbacks = [save_images_callback, tensorboard_callback]
     
-    # Log hyperparameters to TensorBoard with a common prefix
-    with save_images_callback.tensorboard_writer.as_default():
-        tf.summary.scalar('hyperparameters/latent_dim', args.latent_dim, step=0)
-        tf.summary.scalar('hyperparameters/learning_rate', args.learning_rate, step=0)
-        tf.summary.scalar('hyperparameters/epochs', args.epochs, step=0)
-        tf.summary.scalar('hyperparameters/batch_size', args.batch_size, step=0)
-        tf.summary.scalar('hyperparameters/buffer_size', args.buffer_size, step=0)
-        tf.summary.scalar('hyperparameters/examples_to_generate', args.examples_to_generate, step=0)
-        tf.summary.scalar('hyperparameters/save_image_freq', args.save_image_freq, step=0)
-        tf.summary.scalar('hyperparameters/save_model_freq', args.save_model_freq, step=0)
-        tf.summary.scalar('hyperparameters/eval_freq', args.eval_freq, step=0)
-        tf.summary.scalar('hyperparameters/eval_batch_size', args.eval_batch_size, step=0)
-        tf.summary.scalar('hyperparameters/fid_gen_samples', args.fid_gen_samples, step=0)
-        tf.summary.scalar('hyperparameters/fid_real_samples', args.fid_real_samples, step=0)
-        tf.summary.scalar('hyperparameters/inception_score_samples', args.inception_score_samples, step=0)
-        tf.summary.scalar('hyperparameters/wasserstein_distance_samples', args.wasserstein_distance_samples, step=0)
+    callbacks = [save_callback]
 
     vae.fit(
         train_dataset.map(lambda x: (x, x)),
@@ -277,6 +268,9 @@ def main(args):
         validation_data=val_dataset.map(lambda x: (x, x)),
         validation_steps=10000 // args.batch_size
     )
+    
+    # Save model weights at the end of training
+    decoder.save_weights(os.path.join(save_callback.log_folder, 'final_generator_weights.h5'))    
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Train VAE on different datasets')
@@ -297,8 +291,22 @@ if __name__ == "__main__":
     parser.add_argument('--fid_real_samples', type=int, default=10000, help='Number of real samples for FID calculation')
     parser.add_argument('--inception_score_samples', type=int, default=10000, help='Number of samples for Inception Score calculation')
     parser.add_argument('--wasserstein_distance_samples', type=int, default=10000, help='Number of samples for Wasserstein Distance calculation')
+    parser.add_argument('--exp_no', type=int, default=0, help='The experiment number')
 
     args = parser.parse_args()
     
+    # Initialize MLflow and create an experiment
+    mlflow.set_experiment(f"VAE_{args.dataset}_{args.exp_no}")
+    mlflow.start_run()
+    
+    # Log hyperparameters
+    mlflow.log_param("latent_dim", args.latent_dim)
+    mlflow.log_param("learning_rate", args.learning_rate)
+    mlflow.log_param("batch_size", args.batch_size)
+    mlflow.log_param("epochs", args.epochs)
+    mlflow.log_param("dataset", args.dataset)
+    
     main(args)
     
+    # End the MLflow run
+    mlflow.end_run()

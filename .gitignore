@@ -1,3 +1,4 @@
 logs/
 imagenet/
 __pycache__/
+mlruns/
