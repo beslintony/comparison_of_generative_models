@@ -32,13 +32,12 @@ def parse_args():
     parser.add_argument('--epochs', type=int, default=100, help='Number of training epochs')
     parser.add_argument('--buffer_size', type=int, default=50000, help='Buffer size for dataset shuffling')
     parser.add_argument('--latent_dim', type=int, default=100, help='Size of the latent space')
-    parser.add_argument('--batch_size', type=int, default=512, help='Batch size')
-    parser.add_argument('--d_lr', type=float, default=0.0004, help='Discriminator learning rate')
-    parser.add_argument('--g_lr', type=float, default=0.0004, help='Generator learning rate')
+    parser.add_argument('--batch_size', type=int, default=64, help='Batch size')
+    parser.add_argument('--learning_rate', type=float, default=0.0004, help='Discriminator learning rate')
     parser.add_argument('--beta_1', type=float, default=0.5, help='Beta_1 value for Adam optimizer')
     parser.add_argument('--beta_2', type=float, default=0.999, help='Beta_2 value for Adam optimizer')
     parser.add_argument('--dropout_rate', type=float, default=0.3, help='Dropout rate in the discriminator')
-    parser.add_argument('--gp_weight', type=float, default=10.0, help='Weight of the gradient penalty term')
+    parser.add_argument('--gp_lamda', type=float, default=10.0, help='Lambda value for gradient penalty')
     parser.add_argument('--examples_to_generate', type=int, default=25, help='Number of examples to generate in each image')
     parser.add_argument('--save_image_freq', type=int, default=1, help='Frequency of saving generated images')
     parser.add_argument('--save_model_freq', type=int, default=10, help='Frequency of saving the generator model')
@@ -134,8 +133,7 @@ def get_random_z(latent_dim, batch_size):
 # Define discriminator
 def make_discriminator(input_shape, dropout_rate=0.3):
     return tf.keras.Sequential([
-        layers.Conv2D(64, 5, strides=2, padding='same',
-                      input_shape=input_shape),
+        layers.Conv2D(64, 5, strides=2, padding='same', input_shape=input_shape),
         layers.LeakyReLU(),
         layers.Dropout(dropout_rate),
         layers.Conv2D(128, 5, strides=2, padding='same'),
@@ -152,16 +150,13 @@ def make_generator(input_shape):
         layers.BatchNormalization(),
         layers.LeakyReLU(),
         layers.Reshape((8, 8, 256)),
-        layers.Conv2DTranspose(
-            128, 5, strides=1, padding='same', use_bias=False),
+        layers.Conv2DTranspose(128, 5, strides=1, padding='same', use_bias=False),
         layers.BatchNormalization(),
         layers.LeakyReLU(),
-        layers.Conv2DTranspose(
-            64, 5, strides=2, padding='same', use_bias=False),
+        layers.Conv2DTranspose(64, 5, strides=2, padding='same', use_bias=False),
         layers.BatchNormalization(),
         layers.LeakyReLU(),
-        layers.Conv2DTranspose(
-            3, 5, strides=2, padding='same', use_bias=False, activation='sigmoid')
+        layers.Conv2DTranspose(3, 5, strides=2, padding='same', use_bias=False, activation='sigmoid')
     ])
 
 # Wasserstein Loss
@@ -194,8 +189,8 @@ G = make_generator((args.latent_dim,))
 D = make_discriminator((32, 32, 3), dropout_rate=args.dropout_rate)
 
 # Optimizer
-g_optim = tf.keras.optimizers.Adam(args.g_lr, beta_1=args.beta_1, beta_2=args.beta_2)
-d_optim = tf.keras.optimizers.Adam(args.g_lr, beta_1=args.beta_1, beta_2=args.beta_2)
+g_optim = tf.keras.optimizers.Adam(args.learning_rate, beta_1=args.beta_1, beta_2=args.beta_2)
+d_optim = tf.keras.optimizers.Adam(args.learning_rate, beta_1=args.beta_1, beta_2=args.beta_2)
 
 # Loss function
 d_loss_fn, g_loss_fn = get_loss_fn()
@@ -214,7 +209,7 @@ def train_step(real_images):
 
         gp = gradient_penalty(partial(D, training=True),
                               real_images, fake_images)
-        d_loss += gp * args.gp_weight
+        d_loss += gp * args.gp_lamda
 
     d_gradients = d_tape.gradient(d_loss, D.trainable_variables)
     g_gradients = g_tape.gradient(g_loss, G.trainable_variables)
@@ -295,9 +290,10 @@ def train(ds, epochs=10, log_freq=20):
 
 if __name__ == "__main__":
     # Initialize MLflow and create an experiment
-    mlflow.set_experiment(f"WGAN-GP_{args.dataset}_{args.exp_no}")
+    mlflow.set_experiment(f'WGAN-GP_{args.dataset}_exp_{args.exp_no}')
     mlflow.start_run()
-    
+    mlflow.set_tags({"model": "WGAN-GP", "dataset": args.dataset, "exp_no": args.exp_no})
+
     # Calculate the number of iterations per epoch
     iterations_per_epoch = args.buffer_size // args.batch_size
 
@@ -315,13 +311,9 @@ if __name__ == "__main__":
     
     # Log hyperparameters
     mlflow.log_param("latent_dim", args.latent_dim)
-    mlflow.log_param("g_lr", args.g_lr)
-    mlflow.log_param("d_lr", args.d_lr)
-    mlflow.log_param("beta_1", args.beta_1)
-    mlflow.log_param("beta_2", args.beta_2)
-    mlflow.log_param("dropout_rate", args.dropout_rate)
-    mlflow.log_param("batch_size", args.batch_size)
-    mlflow.log_param("gp_weight", args.gp_weight)
+    mlflow.log_param("learning_rate", args.learning_rate)
+
+    mlflow.log_param("gp_lamda", args.gp_lamda)
     mlflow.log_param("epochs", args.epochs)
     mlflow.log_param("dataset", args.dataset)
 

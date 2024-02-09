@@ -36,9 +36,8 @@ def parse_args():
     parser.add_argument('--epochs', type=int, default=1000, help='Number of training epochs')
     parser.add_argument('--buffer_size', type=int, default=50000, help='Buffer size for dataset shuffling')
     parser.add_argument('--latent_dim', type=int, default=100, help='Size of the latent space')
-    parser.add_argument('--batch_size', type=int, default=512, help='Batch size')
-    parser.add_argument('--d_lr', type=float, default=0.0004, help='Discriminator learning rate')
-    parser.add_argument('--g_lr', type=float, default=0.0004, help='Generator learning rate')
+    parser.add_argument('--batch_size', type=int, default=64, help='Batch size')
+    parser.add_argument('--learning_rate', type=float, default=0.0004, help='Learning rate')
     parser.add_argument('--beta_1', type=float, default=0.5, help='Beta_1 value for Adam optimizer')
     parser.add_argument('--beta_2', type=float, default=0.999, help='Beta_2 value for Adam optimizer')
     parser.add_argument('--dropout_rate', type=float, default=0.3, help='Dropout rate in the discriminator')
@@ -185,8 +184,8 @@ G = make_generator((args.latent_dim,))
 D = make_discriminator((32, 32, 3), dropout_rate=args.dropout_rate)
 
 # Optimizer
-g_optim = tf.keras.optimizers.Adam(args.g_lr, beta_1=args.beta_1, beta_2=args.beta_2)
-d_optim = tf.keras.optimizers.Adam(args.d_lr, beta_1=args.beta_1, beta_2=args.beta_2)
+g_optim = tf.keras.optimizers.Adam(args.learning_rate, beta_1=args.beta_1, beta_2=args.beta_2)
+d_optim = tf.keras.optimizers.Adam(args.learning_rate, beta_1=args.beta_1, beta_2=args.beta_2)
 
 # Loss function
 d_loss_fn, g_loss_fn = get_loss_fn()
@@ -283,8 +282,9 @@ def train(ds, epochs=10, log_freq=20):
 
 if __name__ == "__main__":
     # Initialize MLflow and create an experiment
-    mlflow.set_experiment(f"DCGAN_{args.dataset}_{args.exp_no}")
+    mlflow.set_experiment(f'DCGAN_{args.dataset}_exp_{args.exp_no}')
     mlflow.start_run()
+    mlflow.set_tags({"model": "DCGAN", "dataset": args.dataset, "exp_no": args.exp_no})
     
     # Calculate the number of iterations per epoch
     iterations_per_epoch = args.buffer_size // args.batch_size
@@ -303,12 +303,7 @@ if __name__ == "__main__":
     
     # Log hyperparameters
     mlflow.log_param("latent_dim", args.latent_dim)
-    mlflow.log_param("g_lr", args.g_lr)
-    mlflow.log_param("d_lr", args.d_lr)
-    mlflow.log_param("beta_1", args.beta_1)
-    mlflow.log_param("beta_2", args.beta_2)
-    mlflow.log_param("dropout_rate", args.dropout_rate)
-    mlflow.log_param("batch_size", args.batch_size)
+    mlflow.log_param("learning_rate", args.learning_rate)
     mlflow.log_param("epochs", args.epochs)
     mlflow.log_param("dataset", args.dataset)
     

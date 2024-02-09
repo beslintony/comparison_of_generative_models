@@ -57,6 +57,7 @@ class SaveCallback(k.Callback):
 
         plt.figure(figsize=(10, 10))
         for i in range(self.examples_to_generate):
+            mlflow.log_image(generated_images, step=epoch)
             plt.subplot(5, 5, i + 1)
             plt.imshow(generated_images[i, :, :, :])
             plt.axis('off')
@@ -284,6 +285,18 @@ def train_and_evaluate(g_model, d_model, gan_model, dataset, latent_dim, n_epoch
             mlflow.log_metric("Wasserstein Distance", wasserstein_distance, step=i + 1)
             mlflow.log_metric("Epoch", i+1, step=i + 1)
             
+            mlflow.log_table({
+                'Desc. Loss': {'value': mean_d_loss},
+                'Gen. Loss': {'value': mean_g_loss},
+                'Total Loss': {'value': mean_total_loss},
+                'FID Score': {'value': fid_score},
+                'Avg. Inception Score': {'value': is_avg},
+                'Std. Inception Score': {'value': is_std},
+                'Wasserstein Distance': {'value': wasserstein_distance},
+                'Epoch': {'value': i+1}
+                }, step=i + 1
+            )
+            
         mlflow.log_metric("Desc. Loss", mean_d_loss, step=i + 1)
         mlflow.log_metric("Gen. Loss", mean_g_loss, step=i + 1)
         mlflow.log_metric("Total Loss", mean_total_loss, step=i + 1)
@@ -295,11 +308,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Conditional GAN for Different Datasets')
     parser.add_argument('--latent_dim', type=int, default=100, help='Size of the latent space')
     parser.add_argument('--epochs', type=int, default=50, help='Number of training epochs')
-    parser.add_argument('--batch_size', type=int, default=512, help='Batch size for training')
+    parser.add_argument('--batch_size', type=int, default=64, help='Batch size for training')
     parser.add_argument('--buffer_size', type=int, default=50000, help='Buffer size for shuffling')
     parser.add_argument('--dataset', type=str, default='fashion_mnist', choices=['fashion_mnist', 'cifar10', 'svhn' ,'imagenet'], help='Dataset name')
-    parser.add_argument('--g_lr', type=float, default=0.0002, help='Generator learning rate for Adam optimizer')
-    parser.add_argument('--d_lr', type=float, default=0.0002, help='Discriminator learning rate for Adam optimizer')
+    parser.add_argument('--learning_rate', type=float, default=0.0002, help='Learning rate for Adam optimizer')
     parser.add_argument('--alpha', type=float, default=0.2, help='Alpha value for LeakyReLU')
     parser.add_argument('--beta_1', type=float, default=0.5, help='Beta_1 value for Adam optimizer')
     parser.add_argument('--beta_2', type=float, default=0.999, help='Beta_2 value for Adam optimizer')
@@ -320,15 +332,15 @@ if __name__ == "__main__":
     latent_dim = args.latent_dim
         
     # Initialize MLflow and create an experiment
-    mlflow.set_experiment(f'CGAN_{args.dataset}')
+    mlflow.set_experiment(f'CGAN_{args.dataset}_exp_{args.exp_no}')
     mlflow.start_run()
     mlflow.set_tags({"model": "CGAN", "dataset": args.dataset, "exp_no": args.exp_no})
     
     dataset, num_classes = load_dataset(args.dataset, buffer_size=args.buffer_size, batch_size=args.batch_size)
     
-    d_model = define_discriminator(n_classes=num_classes, dropout_rate=args.dropout_rate, learning_rate=args.d_lr, alpha=args.alpha, beta_1=args.beta_1, beta_2=args.beta_2)
+    d_model = define_discriminator(n_classes=num_classes, dropout_rate=args.dropout_rate, learning_rate=args.learning_rate, alpha=args.alpha, beta_1=args.beta_1, beta_2=args.beta_2)
     g_model = define_generator(latent_dim, alpha=args.alpha, n_classes=num_classes)
-    gan_model = define_gan(g_model, d_model, learning_rate=args.g_lr, beta_1=args.beta_1, beta_2=args.beta_2)
+    gan_model = define_gan(g_model, d_model, learning_rate=args.learning_rate, beta_1=args.beta_1, beta_2=args.beta_2)
 
     save_callback = SaveCallback(
         model_name='CGAN',
@@ -344,13 +356,7 @@ if __name__ == "__main__":
     
     # Log hyperparameters
     mlflow.log_param("latent_dim", args.latent_dim)
-    mlflow.log_param("g_lr", args.g_lr)
-    mlflow.log_param("d_lr", args.d_lr)
-    mlflow.log_param("alpha", args.alpha)
-    mlflow.log_param("beta_1", args.beta_1)
-    mlflow.log_param("beta_2", args.beta_2)
-    mlflow.log_param("dropout_rate", args.dropout_rate)
-    mlflow.log_param("batch_size", args.batch_size)
+    mlflow.log_param("learning_rate", args.learning_rate)    
     mlflow.log_param("epochs", args.epochs)
     mlflow.log_param("dataset", args.dataset)
         

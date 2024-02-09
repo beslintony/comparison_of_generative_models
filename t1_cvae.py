@@ -245,7 +245,7 @@ def make_decoder(output_shape=(32, 32, 3), latent_dim=64, condition_size=10):
     return k.Model(inputs=[z, c], outputs=y, name='decoder')
 
 
-def make_cvae_model(latent_dim=64, condition_size=10, learning_rate=0.001, input_shape=(32, 32, 3), alpha=1, beta=1):
+def make_cvae_model(latent_dim=64, condition_size=10, learning_rate=0.001, input_shape=(32, 32, 3), beta=1):
     encoder = make_encoder(input_shape, latent_dim, condition_size)
     decoder = make_decoder(input_shape, latent_dim, condition_size)
 
@@ -269,7 +269,7 @@ def make_cvae_model(latent_dim=64, condition_size=10, learning_rate=0.001, input
     kl_loss = -0.5 * tf.reduce_sum(1 + log_var - tf.square(mean) - tf.exp(log_var), axis=-1)
     kl_loss = tf.reduce_mean(kl_loss)
 
-    cvae_loss = tf.reduce_mean(alpha * reconstruction_loss + beta * kl_loss)
+    cvae_loss = tf.reduce_mean(reconstruction_loss + beta * kl_loss)
 
     cvae = k.Model(inputs=[x, c], outputs=y, name='cvae')
 
@@ -290,7 +290,8 @@ def main(args):
     _, decoder, cvae = make_cvae_model(
         latent_dim=args.latent_dim,
         condition_size=num_classes,
-        learning_rate=args.learning_rate
+        learning_rate=args.learning_rate,
+        beta=args.beta
     )
 
     save_callback = SaveCallback(
@@ -324,7 +325,8 @@ if __name__ == "__main__":
     parser.add_argument('--latent_dim', type=int, default=150, help='Latent dimension')
     parser.add_argument('--learning_rate', type=float, default=1e-4, help='Learning rate')
     parser.add_argument('--epochs', type=int, default=50000, help='Number of epochs')
-    parser.add_argument('--batch_size', type=int, default=512, help='Batch size')
+    parser.add_argument('--batch_size', type=int, default=64, help='Batch size')
+    parser.add_argument('--beta', type=int, default=1, help='Beta value for CVAE loss')
     parser.add_argument('--buffer_size', type=int, default=50000, help='Buffer size for dataset shuffling')
     parser.add_argument('--examples_to_generate', type=int, default=25, help='Number of examples to generate in each image')
     parser.add_argument('--save_image_freq', type=int, default=1, help='Frequency of saving generated images')
@@ -340,13 +342,14 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     # Initialize MLflow and create an experiment
-    mlflow.set_experiment(f"CVAE_{args.dataset}_{args.exp_no}")
+    mlflow.set_experiment(f'CVAE_{args.dataset}_exp_{args.exp_no}')
     mlflow.start_run()
+    mlflow.set_tags({"model": "CVAE", "dataset": args.dataset, "exp_no": args.exp_no})
     
     # Log hyperparameters
     mlflow.log_param("latent_dim", args.latent_dim)
     mlflow.log_param("learning_rate", args.learning_rate)
-    mlflow.log_param("batch_size", args.batch_size)
+    
     mlflow.log_param("epochs", args.epochs)
     mlflow.log_param("dataset", args.dataset)
     

@@ -35,9 +35,8 @@ def parse_arguments():
     parser = argparse.ArgumentParser(description='Wasserstein GAN Training Script')
     parser.add_argument('--dataset', type=str, default='fashion_mnist', choices=['fashion_mnist', 'cifar10', 'svhn' ,'imagenet'], help='Dataset name')
     parser.add_argument('--latent_dim', type=int, default=100, help='Size of the latent space')
-    parser.add_argument('--batch_size', type=int, default=512, help='Batch size for training')
-    parser.add_argument('--d_lr', type=float, default=0.0004, help='Discriminator learning rate')
-    parser.add_argument('--g_lr', type=float, default=0.0004, help='Generator learning rate')
+    parser.add_argument('--batch_size', type=int, default=64, help='Batch size for training')
+    parser.add_argument('--learning_rate', type=float, default=0.0004, help='Learning rate')
     parser.add_argument('--beta_1', type=float, default=0.5, help='Beta_1 value for Adam optimizer')
     parser.add_argument('--beta_2', type=float, default=0.999, help='Beta_2 value for Adam optimizer')
     parser.add_argument('--dropout_rate', type=float, default=0.3, help='Dropout rate in the discriminator')
@@ -265,8 +264,9 @@ if __name__ == "__main__":
     args = parse_arguments()
     
     # Initialize MLflow and create an experiment
-    mlflow.set_experiment(f"WGAN_{args.dataset}_{args.exp_no}")
+    mlflow.set_experiment(f'WGAN_{args.dataset}_exp_{args.exp_no}')
     mlflow.start_run()
+    mlflow.set_tags({"model": "WGAN", "dataset": args.dataset, "exp_no": args.exp_no})
 
     # Initialize generator and discriminator
     img_shape = (32, 32, 3)
@@ -274,8 +274,8 @@ if __name__ == "__main__":
     discriminator = make_discriminator(img_shape, args.dropout_rate)
 
     # Optimizers
-    generator_optimizer = tf.keras.optimizers.Adam(args.g_lr, beta_1=args.beta_1, beta_2=args.beta_2)
-    discriminator_optimizer = tf.keras.optimizers.Adam(args.g_lr, beta_1=args.beta_1, beta_2=args.beta_2)
+    generator_optimizer = tf.keras.optimizers.Adam(args.learning_rate, beta_1=args.beta_1, beta_2=args.beta_2)
+    discriminator_optimizer = tf.keras.optimizers.Adam(args.learning_rate, beta_1=args.beta_1, beta_2=args.beta_2)
     
     save_callback = SaveCallback(
         model_name='WGAN',
@@ -290,12 +290,7 @@ if __name__ == "__main__":
 
     # Log hyperparameters
     mlflow.log_param("latent_dim", args.latent_dim)
-    mlflow.log_param("g_lr", args.g_lr)
-    mlflow.log_param("d_lr", args.d_lr)
-    mlflow.log_param("beta_1", args.beta_1)
-    mlflow.log_param("beta_2", args.beta_2)
-    mlflow.log_param("dropout_rate", args.dropout_rate)
-    mlflow.log_param("batch_size", args.batch_size)
+    mlflow.log_param("learning_rate", args.learning_rate)
     mlflow.log_param("clip_val", args.clip_val)
     mlflow.log_param("epochs", args.epochs)
     mlflow.log_param("dataset", args.dataset)

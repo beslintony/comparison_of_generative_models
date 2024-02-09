@@ -239,7 +239,7 @@ def main(args):
                                     with_labels=False)
     val_dataset, _ = load_validation_dataset(args.dataset, batch_size=args.batch_size, with_labels=False)
 
-    _, decoder, vae = make_model(SIZE=(32, 32, 3), LATENT_DIM=args.latent_dim, LR=args.learning_rate)
+    _, decoder, vae = make_model(SIZE=(32, 32, 3), LATENT_DIM=args.latent_dim, LR=args.learning_rate, BETA=args.beta)
 
     save_callback = SaveCallback(
         model_name='VAE',
@@ -280,7 +280,7 @@ if __name__ == "__main__":
     parser.add_argument('--learning_rate', type=float, default=1e-4, help='Learning rate')
     parser.add_argument('--beta', type=float, default=1.0, help='Beta hyperparameter')
     parser.add_argument('--epochs', type=int, default=5000, help='Number of epochs')
-    parser.add_argument('--batch_size', type=int, default=512, help='Batch size')
+    parser.add_argument('--batch_size', type=int, default=64, help='Batch size')
     parser.add_argument('--buffer_size', type=int, default=60000, help='Buffer size for dataset shuffling')
     parser.add_argument('--examples_to_generate', type=int, default=25, help='Number of examples to generate in each image')
     parser.add_argument('--save_image_freq', type=int, default=1, help='Frequency of saving generated images')
@@ -296,13 +296,13 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     # Initialize MLflow and create an experiment
-    mlflow.set_experiment(f"VAE_{args.dataset}_{args.exp_no}")
+    mlflow.set_experiment(f'VAE_{args.dataset}_exp_{args.exp_no}')
     mlflow.start_run()
+    mlflow.set_tags({"model": "VAE", "dataset": args.dataset, "exp_no": args.exp_no})
     
     # Log hyperparameters
     mlflow.log_param("latent_dim", args.latent_dim)
     mlflow.log_param("learning_rate", args.learning_rate)
-    mlflow.log_param("batch_size", args.batch_size)
     mlflow.log_param("epochs", args.epochs)
     mlflow.log_param("dataset", args.dataset)
     
