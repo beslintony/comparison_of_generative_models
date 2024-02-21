@@ -41,7 +41,8 @@ class SaveCallback(k.callbacks.Callback):
         fid_real_samples=10000,
         inception_score_samples=10000,
         wasserstein_distance_samples=10000,
-        exp_no=0
+        exp_no=0,
+        base_log_folder='/tmp/logs'
     ):
 
         self.model_name = model_name
@@ -53,6 +54,7 @@ class SaveCallback(k.callbacks.Callback):
         self.save_model_freq = save_model_freq
         
         self.exp_no = exp_no
+        self.base_log_folder = base_log_folder
         self.log_folder = self.create_log_folder()
 
         self.eval_freq = eval_freq
@@ -74,9 +76,6 @@ class SaveCallback(k.callbacks.Callback):
             generated_images = self.decoder.predict(latent_samples)
             generated_images = np.clip(generated_images, 0.0, 1.0)
             folder_path = self.save_generated_images(generated_images, epoch + 1)
-            
-        if folder_path is not None:
-            # Log the generated images as artifacts in MLflow
             mlflow.log_artifact(folder_path)
         
         if (epoch + 1) % self.save_model_freq == 0:
@@ -98,12 +97,6 @@ class SaveCallback(k.callbacks.Callback):
                                                with_labels=False)
             real_images_for_evaluation = next(iter(ds_for_evaluation))
             real_images_array = real_images_for_evaluation.numpy()
-
-            print("Real Image Min:", np.min(real_images_array))
-            print("Real Image Max:", np.max(real_images_array))
-            
-            print("Gen Image Min:", np.min(gen_images_array))
-            print("Gen Image Max:", np.max(gen_images_array))
 
             # Calculate and print evaluation metrics
             is_avg, is_std = self.evaluator.calculate_inception_score(
@@ -168,8 +161,7 @@ class SaveCallback(k.callbacks.Callback):
 
     def create_log_folder(self):
         current_time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        base_log_folder = 'logs'
-        log_folder = os.path.join(base_log_folder, self.model_name, self.dataset_name, f'{self.exp_no}_{current_time}')
+        log_folder = os.path.join(self.base_log_folder, self.model_name, self.dataset_name, f'{self.exp_no}_{current_time}')
 
         self.create_folder(log_folder)
         self.create_folder(os.path.join(log_folder, 'images'))
@@ -255,7 +247,8 @@ def main(args):
         fid_real_samples=args.fid_real_samples,
         inception_score_samples=args.inception_score_samples,
         wasserstein_distance_samples=args.wasserstein_distance_samples,
-        exp_no=0
+        exp_no=args.exp_no,
+        base_log_folder=args.base_log_folder
     )
     
     callbacks = [save_callback]
@@ -292,6 +285,7 @@ if __name__ == "__main__":
     parser.add_argument('--inception_score_samples', type=int, default=10000, help='Number of samples for Inception Score calculation')
     parser.add_argument('--wasserstein_distance_samples', type=int, default=10000, help='Number of samples for Wasserstein Distance calculation')
     parser.add_argument('--exp_no', type=int, default=0, help='The experiment number')
+    parser.add_argument('--base_log_folder', type=str, default='/tmp/logs', help='The experiment number')
 
     args = parser.parse_args()
     
@@ -303,8 +297,10 @@ if __name__ == "__main__":
     # Log hyperparameters
     mlflow.log_param("latent_dim", args.latent_dim)
     mlflow.log_param("learning_rate", args.learning_rate)
+    mlflow.log_param("beta", args.beta)
     mlflow.log_param("epochs", args.epochs)
     mlflow.log_param("dataset", args.dataset)
+    mlflow.log_param("exp_no", args.exp_no)
     
     main(args)
     

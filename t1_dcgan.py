@@ -51,6 +51,7 @@ def parse_args():
     parser.add_argument('--inception_score_samples', type=int, default=10000, help='Number of samples for Inception Score calculation')
     parser.add_argument('--wasserstein_distance_samples', type=int, default=10000, help='Number of samples for Wasserstein Distance calculation')
     parser.add_argument('--exp_no', type=int, default=0, help='The experiment number')
+    parser.add_argument('--base_log_folder', type=str, default='/tmp/logs', help='The experiment number')
 
     return parser.parse_args()
 
@@ -61,7 +62,7 @@ args = parse_args()
 test_z = tf.random.normal([36, args.latent_dim])
 
 class SaveCallback(k.Callback):
-    def __init__(self, model_name, dataset_name, decoder, latent_dim, examples_to_generate=25, save_freq=1, save_model_freq=10, exp_no=0):
+    def __init__(self, model_name, dataset_name, decoder, latent_dim, examples_to_generate=25, save_freq=1, save_model_freq=10, exp_no=0, base_log_folder='/tmp/logs'):
         self.model_name = model_name
         self.dataset_name = dataset_name
         self.decoder = decoder
@@ -70,6 +71,7 @@ class SaveCallback(k.Callback):
         self.save_freq = save_freq
         self.save_model_freq = save_model_freq
         self.exp_no = exp_no
+        self.base_log_folder = base_log_folder
         self.log_folder = self.create_log_folder()
 
     def on_epoch_end(self, epoch, logs=None):
@@ -78,9 +80,7 @@ class SaveCallback(k.Callback):
             generated_images = self.decoder.predict(latent_samples)
             generated_images = np.clip(generated_images, 0.0, 1.0)
             folder_path = self.save_generated_images(generated_images, epoch)
-            
-        if folder_path is not None:
-            # Log the generated images as artifacts in MLflow
+
             mlflow.log_artifact(folder_path)
 
         if epoch % self.save_model_freq == 0:
@@ -123,8 +123,7 @@ class SaveCallback(k.Callback):
 
     def create_log_folder(self):
         current_time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        base_log_folder = 'logs'
-        log_folder = os.path.join(base_log_folder, self.model_name, self.dataset_name, f'{self.exp_no}_{current_time}')
+        log_folder = os.path.join(self.base_log_folder, self.model_name, self.dataset_name, f'{self.exp_no}_{current_time}')
 
         self.create_folder(log_folder)
         self.create_folder(os.path.join(log_folder, 'images'))
@@ -245,16 +244,6 @@ def train(ds, epochs=10, log_freq=20):
             gen_images_array = generated_images_for_evaluation
             gen_images_array = np.clip(gen_images_array, 0.0, 1.0)
             
-            print("Real Image Min:", np.min(real_images_array))
-            print("Real Image Max:", np.max(real_images_array))
-            
-            print("Gen Image Min:", np.min(gen_images_array))
-            print("Gen Image Max:", np.max(gen_images_array))
-
-            
-            print("shape of real images: ", real_images_array.shape)
-            print("shape of generated images: ", gen_images_array.shape)
-
             print(f'Calculating metrics...')
             is_avg, is_std = evaluator.calculate_inception_score(gen_images_array[:args.inception_score_samples])
             wasserstein_distance = evaluator.calculate_wasserstein_distance(real_images_array[:args.wasserstein_distance_samples],
@@ -298,7 +287,8 @@ if __name__ == "__main__":
         examples_to_generate=args.examples_to_generate,
         save_freq=args.save_image_freq,
         save_model_freq=args.save_model_freq,
-        exp_no=args.exp_no
+        exp_no=args.exp_no,
+        base_log_folder=args.base_log_folder
     )
     
     # Log hyperparameters
@@ -306,7 +296,8 @@ if __name__ == "__main__":
     mlflow.log_param("learning_rate", args.learning_rate)
     mlflow.log_param("epochs", args.epochs)
     mlflow.log_param("dataset", args.dataset)
-    
+    mlflow.log_param("exp_no", args.exp_no)
+
     # Load dataset
     train_ds, _ = load_dataset(dataset_name=args.dataset, buffer_size=args.buffer_size,
                             batch_size=args.batch_size, target_size=(32, 32), with_labels=False)

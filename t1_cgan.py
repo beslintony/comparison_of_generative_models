@@ -26,7 +26,7 @@ np.random.seed(RANDOM_SEED)
 tf.random.set_seed(RANDOM_SEED)
 
 class SaveCallback(k.Callback):
-    def __init__(self, model_name, dataset_name, num_classes, generator, latent_dim, examples_to_generate=25, save_freq=1, save_model_freq=10, exp_no=0):
+    def __init__(self, model_name, dataset_name, num_classes, generator, latent_dim, examples_to_generate=25, save_freq=1, save_model_freq=10, exp_no=0, base_log_folder='/tmp/logs'):
         self.model_name = model_name
         self.dataset_name = dataset_name
         self.num_classes = num_classes
@@ -36,6 +36,7 @@ class SaveCallback(k.Callback):
         self.save_freq = save_freq
         self.save_model_freq = save_model_freq
         self.exp_no = exp_no
+        self.base_log_folder = base_log_folder
         self.log_folder = self.create_log_folder()
 
     def on_epoch_end(self, epoch, logs=None):
@@ -44,11 +45,8 @@ class SaveCallback(k.Callback):
             generated_images = self.generator.predict([latent_samples, labels])
             generated_images = np.clip(generated_images, 0.0, 1.0)
             folder_path = self.save_generated_images(generated_images, epoch)
-            
-        if folder_path is not None:
-            # Log the generated images as artifacts in MLflow
             mlflow.log_artifact(folder_path)
-
+            
         if epoch % self.save_model_freq == 0:
             self.save_model(epoch)
 
@@ -57,7 +55,6 @@ class SaveCallback(k.Callback):
 
         plt.figure(figsize=(10, 10))
         for i in range(self.examples_to_generate):
-            mlflow.log_image(generated_images, step=epoch)
             plt.subplot(5, 5, i + 1)
             plt.imshow(generated_images[i, :, :, :])
             plt.axis('off')
@@ -90,8 +87,7 @@ class SaveCallback(k.Callback):
 
     def create_log_folder(self):
         current_time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        base_log_folder = 'logs'
-        log_folder = os.path.join(base_log_folder, self.model_name, self.dataset_name, f'{self.exp_no}_{current_time}')
+        log_folder = os.path.join(self.base_log_folder, self.model_name, self.dataset_name, f'{self.exp_no}_{current_time}')
 
         self.create_folder(log_folder)
         self.create_folder(os.path.join(log_folder, 'images'))
@@ -326,6 +322,7 @@ if __name__ == "__main__":
     parser.add_argument('--inception_score_samples', type=int, default=10000, help='Number of samples for Inception Score calculation')
     parser.add_argument('--wasserstein_distance_samples', type=int, default=10000, help='Number of samples for Wasserstein Distance calculation')
     parser.add_argument('--exp_no', type=int, default=0, help='The experiment number')
+    parser.add_argument('--base_log_folder', type=str, default='/tmp/logs', help='The experiment number')
 
     args = parser.parse_args()
 
@@ -351,7 +348,8 @@ if __name__ == "__main__":
         examples_to_generate=25,
         save_freq=args.save_image_freq,
         save_model_freq=args.save_model_freq,
-        exp_no=args.exp_no
+        exp_no=args.exp_no,
+        base_log_folder=args.base_log_folder
     )
     
     # Log hyperparameters
@@ -359,6 +357,7 @@ if __name__ == "__main__":
     mlflow.log_param("learning_rate", args.learning_rate)    
     mlflow.log_param("epochs", args.epochs)
     mlflow.log_param("dataset", args.dataset)
+    mlflow.log_param("exp_no", args.exp_no)
         
     train_and_evaluate(
         g_model=g_model,
