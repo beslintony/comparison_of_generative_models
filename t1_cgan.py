@@ -281,18 +281,6 @@ def train_and_evaluate(g_model, d_model, gan_model, dataset, latent_dim, n_epoch
             mlflow.log_metric("Wasserstein Distance", wasserstein_distance, step=i + 1)
             mlflow.log_metric("Epoch", i+1, step=i + 1)
             
-            mlflow.log_table({
-                'Desc. Loss': {'value': mean_d_loss},
-                'Gen. Loss': {'value': mean_g_loss},
-                'Total Loss': {'value': mean_total_loss},
-                'FID Score': {'value': fid_score},
-                'Avg. Inception Score': {'value': is_avg},
-                'Std. Inception Score': {'value': is_std},
-                'Wasserstein Distance': {'value': wasserstein_distance},
-                'Epoch': {'value': i+1}
-                }, step=i + 1
-            )
-            
         mlflow.log_metric("Desc. Loss", mean_d_loss, step=i + 1)
         mlflow.log_metric("Gen. Loss", mean_g_loss, step=i + 1)
         mlflow.log_metric("Total Loss", mean_total_loss, step=i + 1)
@@ -329,6 +317,7 @@ if __name__ == "__main__":
     latent_dim = args.latent_dim
         
     # Initialize MLflow and create an experiment
+    # os.environ['MLFLOW_TRACKING_URI'] = 'file:///tmp/mlflow'
     mlflow.set_experiment(f'CGAN_{args.dataset}_exp_{args.exp_no}')
     mlflow.start_run()
     mlflow.set_tags({"model": "CGAN", "dataset": args.dataset, "exp_no": args.exp_no})
