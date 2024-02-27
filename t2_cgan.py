@@ -326,3 +326,6 @@ if __name__ == "__main__":
 
     # Train for the specified number of epochs
     train(train_ds, epochs=args.epochs)
+    
+    # End the MLflow run
+    mlflow.end_run()
