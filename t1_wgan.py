@@ -56,8 +56,8 @@ def parse_args():
     parser.add_argument('--inception_score_samples', type=int, default=10000, help='Number of samples for Inception Score calculation')
     parser.add_argument('--wasserstein_distance_samples', type=int, default=10000, help='Number of samples for Wasserstein Distance calculation')
     parser.add_argument('--exp_no', type=int, default=0, help='The experiment number')
-    parser.add_argument('--base_log_folder', type=str, default='/tmp/logs', help='The experiment number')
-
+    parser.add_argument('--base_log_folder', type=str, default='/tmp/logs', help='The base log folder')
+    
     return parser.parse_args()
 
 # Get command-line arguments
@@ -253,7 +253,7 @@ def train(ds, epochs=10, log_freq=20):
                 f'Epoch= {epoch + 1}, FID= {fid_score}, Inception Score= {is_avg:.4f} ± {is_std:.4f}, Wasserstein Distance= {wasserstein_distance}')
 
             mlflow.log_metric("FID Score", fid_score, step=epoch + 1)
-            mlflow.log_metric("Avg. Inceprion Score", is_avg, step=epoch + 1)
+            mlflow.log_metric("Avg. Inception Score", is_avg, step=epoch + 1)
             mlflow.log_metric("Std. Inception Score", is_std, step=epoch + 1)
             mlflow.log_metric("Wasserstein Distance", wasserstein_distance, step=epoch + 1)
             mlflow.log_metric("Epoch", epoch+1, step=epoch + 1)
@@ -270,6 +270,7 @@ def train(ds, epochs=10, log_freq=20):
 
 if __name__ == "__main__":
     # Initialize MLflow and create an experiment
+    os.environ['MLFLOW_TRACKING_URI'] = 'file:///tmp/mlruns/wgan'
     mlflow.set_experiment(f'WGAN_{args.dataset}_exp_{args.exp_no}')
     mlflow.start_run()
     mlflow.set_tags({"model": "WGAN", "dataset": args.dataset, "exp_no": args.exp_no})
@@ -293,6 +294,7 @@ if __name__ == "__main__":
     # Log hyperparameters
     mlflow.log_param("latent_dim", args.latent_dim)
     mlflow.log_param("learning_rate", args.learning_rate)
+    mlflow.log_param("clip_val", args.clip_val)
     mlflow.log_param("epochs", args.epochs)
     mlflow.log_param("dataset", args.dataset)
     mlflow.log_param("exp_no", args.exp_no)
