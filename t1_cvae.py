@@ -117,7 +117,7 @@ class SaveCallback(k.callbacks.Callback):
                 f'Epoch= {epoch + 1}, FID= {fid_score}, Inception Score= {is_avg:.4f} ± {is_std:.4f}, Wasserstein Distance= {wasserstein_distance}')
                 
             mlflow.log_metric("FID Score", fid_score, step=epoch + 1)
-            mlflow.log_metric("Avg. Inceprion Score", is_avg, step=epoch + 1)
+            mlflow.log_metric("Avg. Inception Score", is_avg, step=epoch + 1)
             mlflow.log_metric("Std. Inception Score", is_std, step=epoch + 1)
             mlflow.log_metric("Wasserstein Distance", wasserstein_distance, step=epoch + 1)
             mlflow.log_metric("Epoch", epoch + 1, step=epoch + 1)
@@ -204,11 +204,11 @@ def make_encoder(input_shape=(32, 32, 3), latent_dim=64, condition_size=10):
 
     h = layers.concatenate([x, c_reshaped])
 
-    h = layers.Conv2D(filters=32, kernel_size=3, strides=(2, 2), padding='SAME', activation='relu')(h)
+    h = layers.Conv2D(filters=32, kernel_size=4, strides=(2, 2), padding='SAME', activation='relu')(h)
     h = layers.BatchNormalization()(h)
-    h = layers.Conv2D(filters=64, kernel_size=3, strides=(2, 2), padding='SAME', activation='relu')(h)
+    h = layers.Conv2D(filters=64, kernel_size=4, strides=(2, 2), padding='SAME', activation='relu')(h)
     h = layers.BatchNormalization()(h)
-    h = layers.Conv2D(filters=128, kernel_size=3, strides=(2, 2), padding='SAME', activation='relu')(h)
+    h = layers.Conv2D(filters=128, kernel_size=4, strides=(2, 2), padding='SAME', activation='relu')(h)
     h = layers.BatchNormalization()(h)
     h = layers.Flatten()(h)
     h = layers.Dense(256, activation='relu')(h)
@@ -241,7 +241,7 @@ def make_cvae_model(latent_dim=64, condition_size=10, learning_rate=0.001, input
     encoder = make_encoder(input_shape, latent_dim, condition_size)
     decoder = make_decoder(input_shape, latent_dim, condition_size)
 
-    def sampling(args):
+    def sample(args):
         mean, log_var = args
         batch = tf.shape(mean)[0]
         dim = tf.shape(mean)[1]
@@ -252,7 +252,7 @@ def make_cvae_model(latent_dim=64, condition_size=10, learning_rate=0.001, input
     c = layers.Input(shape=(condition_size,))
 
     mean, log_var = encoder([x, c])
-    z = layers.Lambda(sampling, output_shape=(latent_dim,), name='sampling')([mean, log_var])
+    z = layers.Lambda(sample, output_shape=(latent_dim,), name='sampler')([mean, log_var])
     y = decoder([z, c])
 
     reconstruction_loss = k.losses.mean_squared_error(y_true=x, y_pred=y)
