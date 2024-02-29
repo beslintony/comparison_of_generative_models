@@ -1,6 +1,7 @@
 """
 Based on the given URL:
 https://github.com/s-omranpour/X-VAE-keras/blob/master/VAE/VAE.py
+https://keras.io/examples/generative/vae/
 """
 
 import argparse
