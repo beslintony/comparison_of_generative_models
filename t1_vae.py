@@ -195,7 +195,10 @@ def make_model(SIZE=(32, 32, 3), LATENT_DIM=10, LR=1e-4, BETA=1.0):
     d = layers.BatchNormalization()(d)
     d = layers.Conv2DTranspose(filters=3, kernel_size=4, strides=(2, 2), padding="SAME", activation='sigmoid')(d)
     decoder = k.Model(inputs=decoder_inputs, outputs=d, name='decoder')
-
+    
+# Some modifications of the loss calculations from 
+# https://github.com/s-omranpour/X-VAE-keras/blob/master/VAE/conditional%20VAE.ipynb
+    
     # VAE
     def sample(inputs):
         z_mean, z_log_var = inputs
