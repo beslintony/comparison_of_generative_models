@@ -62,7 +62,7 @@ The experiments rely on a Singularity container image (ml_container.sif) to ensu
    ```
 **Adding Additional Python Modules**
 
-If you need to add additional Python modules to the Singularity image, you can do so by creating a definition file (ml_container.def) and building the image with those dependencies. For example, to add the mlflow package:
+If you need to add additional Python modules to the Singularity image, you can do so by creating a definition file (ml_container.def) and building the image with those dependencies.
 
 - First, you need to start a shell session inside the Singularity container. You can do this using the following command.
 
